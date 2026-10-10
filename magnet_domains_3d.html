@@ -1398,7 +1398,7 @@ const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, vertexColors: tru
 const lineInk = new THREE.Color(0x1d2630), lineHot = new THREE.Color(0xc2541b); // 기본 선 / 정육면체를 지나는 선
 const lineObj = new THREE.LineSegments(lineGeo, lineMat);
 mScene.add(lineObj);
-const DOTS_PER = 14, dotPos = new Float32Array(MAX_LINES * DOTS_PER * 3);
+const DOTS_MAX = 160, dotPos = new Float32Array(MAX_LINES * DOTS_MAX * 3); // 선 길이에 비례한 개수
 const dotGeo = new THREE.BufferGeometry(); dotGeo.setAttribute('position', new THREE.BufferAttribute(dotPos, 3)); dotGeo.setDrawRange(0, 0);
 const dotMat = new THREE.PointsMaterial({ color: 0x1d2630, size: 0.2, sizeAttenuation: true });
 const dotObj = new THREE.Points(dotGeo, dotMat);
@@ -1678,10 +1678,10 @@ function applyMacroResult(d, fresh) {
 function updateDots(dt) {
   if (!$('flowChk').checked || !$('linesChk').checked) { dotGeo.setDrawRange(0, 0); return; }
   flowPhase += dt * 1.6; let w = 0;
-  const spacing = 1.4;
   for (const L of lines) {
-    for (let k = 0; k < DOTS_PER; k++) {
-      let s = (flowPhase + k * spacing) % L.len; if (k * spacing > L.len) break;
+    const nd = Math.max(1, Math.min(DOTS_MAX, Math.round(L.len / 1.4))), sp = L.len / nd; // 약 1.4 cm 간격, 고리 전체에 고르게
+    for (let k = 0; k < nd; k++) {
+      const s = (flowPhase + k * sp) % L.len;
       let lo = 0, hi = L.n - 1;
       while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (L.cum[mid] < s) lo = mid; else hi = mid; }
       const seg = L.cum[hi] - L.cum[lo] || 1, t = (s - L.cum[lo]) / seg;
