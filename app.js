@@ -849,7 +849,7 @@ function renderGpuDomains() {
   uCam.updateMatrixWorld(); gdomM.multiplyMatrices(uCam.matrixWorld, uCam.projectionMatrixInverse);
   gdomU.set(gdomM.elements, 0);
   const E = easyDirs(), stp = Math.min(0.12, 16 / N * 0.35);
-  gdomU[16] = N; gdomU[17] = E.dirs.length; gdomU[18] = stp; gdomU[19] = 1 - Math.pow(0.85, stp / 16); // 안쪽은 아주 옇게, 경계면이 잘 보이도록
+  gdomU[16] = N; gdomU[17] = E.dirs.length; gdomU[18] = stp; gdomU[19] = 1 - Math.pow(0.85, stp / 16); // 안쪽은 아주 옅게, 경계면이 잘 보이도록
   const L = new THREE.Vector3(0.4, 0.8, 0.45).normalize(); gdomU.set([L.x, L.y, L.z, 0], 20);
   for (let c = 0; c < 8; c++) {
     const d = E.dirs[c] || [0, 0, 0], col = E.dirs[c] ? dirColor(d) : new THREE.Color(0, 0, 0);
