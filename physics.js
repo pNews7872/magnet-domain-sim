@@ -182,6 +182,17 @@ function buildDefects(N, cfg) {
       sphere(R() * (N - 1), R() * (N - 1), R() * (N - 1), r, (id) => { ms[id] = 0; kp[id] = 0; kind[id] = 1; });
     }
   }
+  if (cfg.shape && cfg.shape !== 'cube') { // 입자 모양: 바깥 상자 안에서 모양 밖의 칸은 비자성(빈 공간)으로
+    const c = (N - 1) / 2, h = N / 2;
+    for (let z = 0, id = 0; z < N; z++) for (let y = 0; y < N; y++) for (let x = 0; x < N; x++, id++) {
+      const u = (x - c) / h, v = (y - c) / h, w = (z - c) / h; let inside = true;
+      if (cfg.shape === 'sphere') inside = u * u + v * v + w * w <= 1;
+      else if (cfg.shape === 'plate') inside = Math.abs(v) <= 0.25;
+      else if (cfg.shape === 'disk') inside = u * u + w * w <= 1 && Math.abs(v) <= 0.25;
+      else if (cfg.shape === 'rod') inside = Math.abs(v) <= 1 / 3 && Math.abs(w) <= 1 / 3;
+      if (!inside) { ms[id] = 0; kp[id] = 0; kind[id] = 4; }
+    }
+  }
   return { ms, exw, kp, kpAxis, rot, kind };
 }
 

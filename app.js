@@ -677,7 +677,7 @@ function buildDomains(m, statsOnly) {
   while (domGroup.children.length) { const o = domGroup.children.pop(); o.geometry.dispose(); o.material.dispose(); }
   const N = NGRID, n3 = N * N * N, E = easyDirs(), dirs = E.dirs, K = dirs.length, cls = new Int8Array(n3).fill(-1);
   for (let id = 0; id < n3; id++) {
-    if (defectKind[id] === 1) continue;
+    if (defectKind[id] === 1 || defectKind[id] === 4) continue;
     let best = 0, bv = -9; for (let c = 0; c < K; c++) { const v = m[3 * id] * dirs[c][0] + m[3 * id + 1] * dirs[c][1] + m[3 * id + 2] * dirs[c][2]; if (v > bv) { bv = v; best = c; } }
     cls[id] = best;
   }
@@ -893,7 +893,7 @@ function smoothField(m, N, rad) { // 칸 크기 열 요동을 걷어내려고 �
       const c = ax === 0 ? id % N : ax === 1 ? ((id / N) | 0) % N : (id / (N * N)) | 0;
       let sx = 0, sy = 0, sz = 0, w = 0;
       for (let d = -rad; d <= rad; d++) { const cc = c + d; if (cc < 0 || cc >= N) continue; const j = id + d * st;
-        const wj = ax === 0 ? (defectKind[j] === 1 ? 0 : 1) : srcW[j]; if (!wj) continue; sx += src[3 * j] * wj; sy += src[3 * j + 1] * wj; sz += src[3 * j + 2] * wj; w += wj; }
+        const wj = ax === 0 ? (defectKind[j] === 1 || defectKind[j] === 4 ? 0 : 1) : srcW[j]; if (!wj) continue; sx += src[3 * j] * wj; sy += src[3 * j + 1] * wj; sz += src[3 * j + 2] * wj; w += wj; }
       dst[3 * id] = w ? sx / w : 0; dst[3 * id + 1] = w ? sy / w : 0; dst[3 * id + 2] = w ? sz / w : 0; if (ax < 2) dW[id] = w ? 1 : 0;
     }
     src = dst; srcW = dW;
@@ -911,7 +911,7 @@ function sampleField(f, N, p, out) { // 화면 좌표 p에서 삼선형 보간, 
     const id = xi + N * (yi + N * zi); out[0] += w * f[3 * id]; out[1] += w * f[3 * id + 1]; out[2] += w * f[3 * id + 2];
   }
   const ci = cl(Math.round(qx)) + N * (cl(Math.round(qy)) + N * cl(Math.round(qz)));
-  return defectKind[ci] !== 1;
+  return defectKind[ci] !== 1 && defectKind[ci] !== 4;
 }
 function traceFlow(m) {
   const N = NGRID, f = smoothField(m, N, N >= 64 ? 2 : 1), g = 7, hs = Math.max(0.12, 0.45 * 16 / N), maxSteps = UF_PTS / 2 - 2, v = [0, 0, 0], v2 = [0, 0, 0];
@@ -979,7 +979,7 @@ function drawMicro(m) {
   if (visDirty || !visIds) { // 보이는 칸 목록을 다시 만들고, 나머지는 한 번만 숨김
     visIds = []; const z0 = new THREE.Matrix4().makeScale(0, 0, 0);
     for (let z = 0, id = 0; z < NGRID; z++) for (let y = 0; y < NGRID; y++) for (let x = 0; x < NGRID; x++, id++) {
-      if (visible(x, y, z) && defectKind[id] !== 1) visIds.push(id); else cones.setMatrixAt(id, z0);
+      if (visible(x, y, z) && defectKind[id] !== 1 && defectKind[id] !== 4) visIds.push(id); else cones.setMatrixAt(id, z0);
     }
     visDirty = false;
   }
@@ -1015,10 +1015,12 @@ let dirty = true, lastCompute = 0;
 function markDirty() { dirty = true; }
 function edgeLimits() { const m = MATS[matKey]; if (m.kind !== 'ferro') return null; const max = Math.floor(NGRID * lexOf(m) * 1e9 * 0.95); return { min: 10, max }; }
 let defSeed = 12345, thermFix = 1;
+const SHAPE_NAME = { cube: '정육면체', sphere: '구', plate: '얇은 판', disk: '원판', rod: '막대' };
 function defectCfg() {
   const on = (id) => $(id).checked;
-  if (!(on('dInc') || on('dGb') || on('dPoly') || on('dPrec'))) return null;
-  return { seed: defSeed, amount: +$('defAmt').value, incl: on('dInc'), gb: on('dGb'), poly: on('dPoly'), prec: on('dPrec'), precK: 5e5 };
+  const shape = $('shapeSel').value, any = on('dInc') || on('dGb') || on('dPoly') || on('dPrec');
+  if (!any && shape === 'cube') return null;
+  return { seed: defSeed, amount: any ? +$('defAmt').value : 0, incl: on('dInc'), gb: on('dGb'), poly: on('dPoly'), prec: on('dPrec'), precK: 5e5, shape };
 }
 function microActive() { const m = MATS[matKey]; return m.kind === 'ferro' && matAtT(m, tempK).m >= 0.02; }
 function sendConfig(state) {
@@ -1127,8 +1129,10 @@ function rateText(ns) { // 실제 1초 동안 계산되는 물리 시간
   const r = (ns - rateHist[0][1]) / ((now - rateHist[0][0]) / 1000); return r > 0 ? ` (1초에 ${fmtT(r)})` : '';
 }
 function neelText(mat, edge, a) {
-  if (Math.hypot(a[0], a[1], a[2]) < 0.85 || tempK <= 0) return '';
-  const eff = matAtT(mat, tempK), V = Math.pow(edge * 1e-9, 3), kT = 1.380649e-23 * tempK;
+  const shp = $('shapeSel').value;
+  if (Math.hypot(a[0], a[1], a[2]) < 0.85 || tempK <= 0 || (shp !== 'cube' && shp !== 'sphere')) return ''; // 판·막대는 모양 이방성이 커서 이 추정식이 맞지 않음
+  let fill = 0; for (let i = 0; i < defectKind.length; i++) if (defectKind[i] !== 4) fill++;
+  const eff = matAtT(mat, tempK), V = Math.pow(edge * 1e-9, 3) * fill / defectKind.length, kT = 1.380649e-23 * tempK;
   let dE;
   if (eff.aniso === 'uniaxial') dE = (eff.K1 + Math.max(0, eff.K2)) * V;
   else if (eff.aniso === 'cubic') dE = (eff.K1 >= 0 ? eff.K1 / 4 : -eff.K1 / 12) * V;
@@ -1190,6 +1194,7 @@ $('defAmt').addEventListener('change', () => sendConfig());
 $('defAmt').addEventListener('input', (e) => { $('defAmtVal').textContent = Math.round(e.target.value * 100) + '%'; });
 $('defNew').addEventListener('click', () => { defSeed = (defSeed * 1103515245 + 12345) >>> 0; sendConfig(); });
 $('markChk').addEventListener('change', drawMarks);
+$('shapeSel').addEventListener('change', () => sendConfig('random'));
 $('thermFix').addEventListener('change', () => sendConfig());
 $('gridSel').addEventListener('change', (e) => setGrid(+e.target.value));
 $('gpuChk').addEventListener('change', (e) => setEngineMode(e.target.checked));
@@ -1241,7 +1246,7 @@ function loop(now) {
     hArrow.visible = hB > 1e-5;
     if (hArrow.visible) { const d = new THREE.Vector3(...probeB).normalize(); hArrow.position.copy(d.clone().multiplyScalar(-15)); hArrow.setDirection(d); hArrow.setLength(5, 1.6, 1.0); }
     $('microReadout').innerHTML =
-      `${mat.name} 나노 정육면체, 한 변 <b>${edge} nm</b> (한 칸 ${(edge / NGRID).toFixed(2)} nm, ${NGRID}³ 칸, ${microFrame.gpu ? 'GPU' : 'CPU'}${thermFix > 1.0005 ? `, 열 보정 Ms ×${thermFix.toFixed(3)}` : ''})<br>` +
+      `${mat.name} 나노 ${SHAPE_NAME[$('shapeSel').value]}, 바깥 상자 한 변 <b>${edge} nm</b> (한 칸 ${(edge / NGRID).toFixed(2)} nm, ${NGRID}³ 칸, ${microFrame.gpu ? 'GPU' : 'CPU'}${thermFix > 1.0005 ? `, 열 보정 Ms ×${thermFix.toFixed(3)}` : ''})<br>` +
       `받는 자기장: <b>${(hB * 1000).toFixed(hB < 0.001 ? 2 : 0)} mT</b> (주황 화살표)<br>` +
       `평균 자화 방향 ⟨m⟩ = (${a.map(v => v.toFixed(2)).join(', ')})<br>` +
       `계산된 시간 ${fmtT(microFrame.tns)}${rateText(microFrame.tns)}, ${microFrame.thermal ? `<b>${Math.round(tempK)} K 열 요동 중</b>` : microFrame.stable ? '<b>안정 상태</b>' : '자리 잡는 중'}` +
