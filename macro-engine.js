@@ -125,7 +125,7 @@ function makeMacroEngine(post) {
     const Hx = computeHext();
     let M;
     if (!mat || mat.off) { M = new Float64Array(3 * n3); }
-    else if (mat.small) { M = Hx.map(v => v * mat.chi); } // |χ|≪1
+    else if (mat.small) { const ce = mat.chi / (1 + mat.chi / 3); M = Hx.map(v => v * ce); } // 작은 χ: 정육면체 반자장(1/3)만 보정, |χ|≪1이면 χ와 같음
     else { S.update(Hx); M = S.M; }
     for (let i = 0; i < 3 * n3; i++) J[i] = MU0 * M[i];
     if (mat && !mat.small && !mat.off) { for (let i = 0; i < 3 * n3; i++) HdC[i] = MU0 * S.Hd[i]; } else HdC.fill(0);

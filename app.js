@@ -358,15 +358,6 @@ function tracePreview() {
 }
 // 고리가 닫히지 않았거나 화면 밖으로 나가 잘리는 선은 그리지 않음
 const pv = new THREE.Vector3();
-function lineFullyVisible_unused(L) {
-  const n = L.n, a = L.arr;
-  if (Math.hypot(a[0] - a[3 * n - 3], a[1] - a[3 * n - 2], a[2] - a[3 * n - 1]) > 0.2) return false; // 닫히지 않은 선
-  for (let i = 0; i < n; i++) {
-    pv.set(a[3 * i], a[3 * i + 1], a[3 * i + 2]).project(mCam);
-    if (pv.z < -1 || pv.z > 1 || Math.abs(pv.x) > 0.985 || Math.abs(pv.y) > 0.985) return false;
-  }
-  return true;
-}
 let lineViewDirty = false;
 function drawLines() {
   lines = allLines;
@@ -589,7 +580,7 @@ function setEngineMode(gpu) {
   if (!want && NGRID > 32) setGrid(32); else if (microActive()) { sendConfig(); if (prevM && prevM.length === 3 * N3) engine.msg({ type: 'config', N: NGRID, alpha: lastInit.alpha, mat: lastInit.mat, edge: lastInit.edge, T: lastInit.T, stressK: lastInit.stressK, stressAxis: lastInit.stressAxis, defects: lastInit.defects, h: lastInit.h, m: Array.from(prevM) }); }
 }
 function fallbackToCPU() { gpuOK = false; $('gpuChk').checked = false; $('gpuChk').disabled = true; $('gpuNote').textContent = gpuNote; setEngineMode(false); }
-function onEngineMsg(d) { if (d.type === 'frame' && !!d.gpu === useGPU) microFrame = d; }
+function onEngineMsg(d) { if (d.type === 'frame' && !!d.gpu === useGPU && d.m.length === 3 * N3) microFrame = d; } // 격자를 바꾼 직후 이전 크기의 프레임은 버림
 let microFrame = null;
 (function startEngine() {
   try {
@@ -1046,7 +1037,7 @@ function updateOverlay() {
   const m = MATS[matKey], act = microActive();
   $('diaOverlay').classList.toggle('on', !act);
   cones.visible = act; hArrow.visible = hArrow.visible && act;
-  ['edgeSl', 'alphaSl', 'pauseBtn', 'defAmt', 'defNew', 'markChk', 'dInc', 'dGb', 'dPoly', 'dPrec', 'dStress'].forEach(id => { $(id).disabled = !act; });
+  ['edgeSl', 'alphaSl', 'pauseBtn', 'defAmt', 'defNew', 'markChk', 'dInc', 'dGb', 'dPoly', 'dPrec', 'dStress', 'shapeSel', 'uflowChk'].forEach(id => { $(id).disabled = !act; });
   document.querySelectorAll('[data-init]').forEach(b => b.disabled = !act);
   if (!act) drawMarks();
 }
@@ -1138,7 +1129,7 @@ function neelText(mat, edge, a) {
   let fill = 0; for (let i = 0; i < defectKind.length; i++) if (defectKind[i] !== 4) fill++;
   const eff = matAtT(mat, tempK), V = Math.pow(edge * 1e-9, 3) * fill / defectKind.length, kT = 1.380649e-23 * tempK;
   let dE;
-  if (eff.aniso === 'uniaxial') dE = (eff.K1 + Math.max(0, eff.K2)) * V;
+  if (eff.aniso === 'uniaxial') dE = (eff.K1 + 2 * eff.K2 >= 0 ? eff.K1 + eff.K2 : eff.K1 * eff.K1 / (-4 * eff.K2)) * V; // E = K1 sin²θ + K2 sin⁴θ 의 최댓값
   else if (eff.aniso === 'cubic') dE = (eff.K1 >= 0 ? eff.K1 / 4 : -eff.K1 / 12) * V;
   else dE = 0;
   const x = dE / kT;
@@ -1172,7 +1163,7 @@ function updateMicroOverlayText() {
   } else {
     $('microReadout').innerHTML = `${mat.name}: 퀴리 온도 위, 자구 없음`;
     t = `<h3>퀴리 온도를 넘었어요</h3>${mat.topic} ${mat.Tc} K(${Math.round(mat.Tc - 273.15)} °C)를 넘으면 열 운동이 교환 상호작용을 이겨서 자발 자화가 사라져요. 자구와 자벽도 함께 사라지고 상자성으로 바뀌어요. 온도를 퀴리 온도 아래로 내리면 자구가 무작위 방향에서 다시 생겨요.`;
-    const c = chiCW(mat, tempK); if (c) t += `<br><br>지금 자화율은 퀴리–바이스 법칙으로 χ ≈ ${sci(c)}이고, 탐침 위치에서 M ≈ <b>${sci(c * Math.hypot(...probeB) / MU0)} A/m</b>예요. 퀴리 온도에 가까울수록 커져요.`;
+    const c = chiCW(mat, tempK); if (c) t += `<br><br>지금 자화율은 퀴리–바이스 법칙으로 χ ≈ ${sci(c)}이고, 탐침 위치에 놓인 나노 정육면체라면 M ≈ <b>${sci(c / (1 + c / 3) * Math.hypot(...probeB) / MU0)} A/m</b>예요(반자장 보정 포함). 퀴리 온도에 가까울수록 커져요.`;
   }
   if (mat.kind !== 'ferro') t += `<br><br>지금 탐침 위치에서는 M ≈ <b>${sci(Mp)} A/m</b>로, 철의 포화자화(${sci(FE_MS)} A/m)의 ${sci(Mp / FE_MS)}배예요. 자석을 치우면 바로 0으로 돌아가요.`;
   $('diaText').innerHTML = t;

@@ -147,11 +147,11 @@ class MacroSolver {
         if (smax > dmax) lam = dmax / smax;
         for (let ls = 0; ls < 14; ls++) {
           for (let i = 0; i < N3; i++) dHt[i] = dH[i] + lam * dMs[i] / this.chi[(i / 3) | 0];
-          const rt = evalR(dHt, trialT, dMt, R); if (typeof DEBUG !== "undefined" && DEBUG > 1) console.log("  lam", lam, "rt", rt.toFixed(2), "rn", rn.toFixed(2), "maxdH", Math.max(...dMs.map((v,i)=>Math.abs(v/this.chi[(i/3)|0]))).toFixed(2));
+          const rt = evalR(dHt, trialT, dMt, R);
           if (rt < rn) { rn = rt; dH.set(dHt); trial.set(trialT); dMj.set(dMt); ok = true; break; }
           lam *= 0.5;
         }
-        if (!ok) { if (typeof DEBUG !== "undefined") console.log("ls fail it", it, rn, tol); evalR(dH, trial, dMj, R); break; }
+        if (!ok) { evalR(dH, trial, dMj, R); break; }
       }
       this.st.set(trial);
       for (let i = 0; i < N3; i++) this.H[i] += dH[i];
