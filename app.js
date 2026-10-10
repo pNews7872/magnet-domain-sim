@@ -738,48 +738,87 @@ function buildDomains(m, statsOnly) {
   domStatsHTML = `<br>자구 기준: ${E.label}, 덩어리 ${rows.reduce((s, r) => s + r.comps, 0)}개<br>` +
     rows.map(r => `<span style="display:inline-block;width:.75em;height:.75em;border-radius:2px;vertical-align:-1px;background:#${dirColor(dirs[r.c]).getHexString()}"></span> ${dirName(dirs[r.c])} ${(100 * r.vol / (total || 1)).toFixed(0)}%${r.comps > 1 ? ` (${r.comps}개)` : ''}`).join(' &nbsp;');
 }
-// ===== GPU 자구 보기: GPU에 있는 자화 데이터를 그대로 광선 추적해서 매 화면마다 그림 (CPU로 옮기지 않음) =====
-const GPU_DOM_WGSL = `
-struct U { invVP: mat4x4<f32>, prm: vec4<f32>, dirs: array<vec4<f32>, 8>, cols: array<vec4<f32>, 8> };
-@group(0) @binding(0) var<uniform> u: U;
+// ===== GPU 자구 보기: GPU에 있는 자화를 먼저 주변 칸과 평균(거칠게 보기)한 뒤, 부드럽게 보간해서 자구 경계면을 광선 추적으로 그림 =====
+const GPU_SMOOTH_WGSL = `
+struct P { n: u32, r: i32, a: u32, b: u32 };
+@group(0) @binding(0) var<uniform> pr: P;
 @group(0) @binding(1) var<storage, read> m: array<f32>;
 @group(0) @binding(2) var<storage, read> cellp: array<f32>;
+@group(0) @binding(3) var<storage, read_write> sm: array<vec4<f32>>;
+@compute @workgroup_size(64) fn smoothm(@builtin(global_invocation_id) g: vec3<u32>, @builtin(num_workgroups) nw: vec3<u32>) {
+  let N = pr.n; let id = g.x + g.y * nw.x * 64u; if (id >= N * N * N) { return; }
+  let x = i32(id % N); let y = i32((id / N) % N); let z = i32(id / (N * N)); let Ni = i32(N);
+  var s = vec3<f32>(0.0); var w = 0.0; var cnt = 0.0;
+  for (var dz = -pr.r; dz <= pr.r; dz = dz + 1) { for (var dy = -pr.r; dy <= pr.r; dy = dy + 1) { for (var dx = -pr.r; dx <= pr.r; dx = dx + 1) {
+    let xx = x + dx; let yy = y + dy; let zz = z + dz;
+    if (xx < 0 || yy < 0 || zz < 0 || xx >= Ni || yy >= Ni || zz >= Ni) { continue; }
+    let j = u32(xx + Ni * (yy + Ni * zz)); let ms = cellp[3u * j]; cnt = cnt + 1.0;
+    if (ms > 0.0) { s = s + vec3<f32>(m[3u * j], m[3u * j + 1u], m[3u * j + 2u]); w = w + 1.0; }
+  } } }
+  let own = select(0.0, 1.0, cellp[3u * id] > 0.0);
+  sm[id] = vec4<f32>(s / max(w, 1.0), own); // xyz: 주변 평균 자화(크기가 정렬 정도), w: 자성 칸 여부
+}`;
+const GPU_DOM_WGSL = `
+struct U { invVP: mat4x4<f32>, prm: vec4<f32>, light: vec4<f32>, dirs: array<vec4<f32>, 8>, cols: array<vec4<f32>, 8> };
+@group(0) @binding(0) var<uniform> u: U;
+@group(0) @binding(1) var<storage, read> sm: array<vec4<f32>>;
 struct VO { @builtin(position) pos: vec4<f32>, @location(0) ndc: vec2<f32> };
 @vertex fn vs(@builtin(vertex_index) i: u32) -> VO {
   var p = array<vec2<f32>, 3>(vec2<f32>(-1.0, -1.0), vec2<f32>(3.0, -1.0), vec2<f32>(-1.0, 3.0));
   var o: VO; o.pos = vec4<f32>(p[i], 0.0, 1.0); o.ndc = p[i]; return o;
 }
-fn cls(id: u32) -> i32 {
-  if (cellp[3u * id] == 0.0) { return -1; }
-  let v = vec3<f32>(m[3u * id], m[3u * id + 1u], m[3u * id + 2u]);
+fn fetch(x: i32, y: i32, z: i32) -> vec4<f32> {
+  let N = i32(u.prm.x); let c = clamp(vec3<i32>(x, y, z), vec3<i32>(0), vec3<i32>(N - 1));
+  return sm[u32(c.x + N * (c.y + N * c.z))];
+}
+fn field(p: vec3<f32>) -> vec4<f32> { // 칸 사이 삼선형 보간
+  let q = (p + vec3<f32>(8.0)) / 16.0 * u.prm.x - vec3<f32>(0.5);
+  let i0 = vec3<i32>(floor(q)); let f = q - floor(q);
+  let c00 = mix(fetch(i0.x, i0.y, i0.z), fetch(i0.x + 1, i0.y, i0.z), f.x);
+  let c10 = mix(fetch(i0.x, i0.y + 1, i0.z), fetch(i0.x + 1, i0.y + 1, i0.z), f.x);
+  let c01 = mix(fetch(i0.x, i0.y, i0.z + 1), fetch(i0.x + 1, i0.y, i0.z + 1), f.x);
+  let c11 = mix(fetch(i0.x, i0.y + 1, i0.z + 1), fetch(i0.x + 1, i0.y + 1, i0.z + 1), f.x);
+  return mix(mix(c00, c10, f.y), mix(c01, c11, f.y), f.z);
+}
+fn classOf(v: vec4<f32>) -> i32 {
+  if (v.w < 0.5) { return -1; }
   var best = 0; var bv = -9.0;
-  for (var c = 0; c < i32(u.prm.y); c = c + 1) { let d = dot(v, u.dirs[c].xyz); if (d > bv) { bv = d; best = c; } }
+  for (var c = 0; c < i32(u.prm.y); c = c + 1) { let d = dot(v.xyz, u.dirs[c].xyz); if (d > bv) { bv = d; best = c; } }
   return best;
 }
 @fragment fn fs(i: VO) -> @location(0) vec4<f32> {
   let a = u.invVP * vec4<f32>(i.ndc, -1.0, 1.0); let b = u.invVP * vec4<f32>(i.ndc, 1.0, 1.0);
   let ro = a.xyz / a.w; let rd = normalize(b.xyz / b.w - ro);
-  let inv = 1.0 / rd; let t0 = (vec3<f32>(-8.0) - ro) * inv; let t1 = (vec3<f32>(8.0) - ro) * inv;
+  let rs = select(rd, vec3<f32>(1e-6), abs(rd) < vec3<f32>(1e-6));
+  let inv = 1.0 / rs; let t0 = (vec3<f32>(-8.0) - ro) * inv; let t1 = (vec3<f32>(8.0) - ro) * inv;
   let tmin = max(max(min(t0.x, t1.x), min(t0.y, t1.y)), min(t0.z, t1.z));
   let tmax = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
-  if (tmax <= max(tmin, 0.0)) { return vec4<f32>(0.0); }
-  let N = u32(u.prm.x); let stp = u.prm.z;
-  var t = max(tmin, 0.0) + 0.5 * stp; var C = vec3<f32>(0.0); var A = 0.0; var prev = -2;
-  for (var k = 0; k < 1200; k = k + 1) {
-    if (t > tmax || A > 0.97) { break; }
-    let p = ro + rd * t;
-    let g = min(vec3<u32>(max((p + vec3<f32>(8.0)) / 16.0 * u.prm.x, vec3<f32>(0.0))), vec3<u32>(N - 1u));
-    let c = cls(g.x + N * (g.y + N * g.z));
+  if (!(tmax > max(tmin, 0.0))) { return vec4<f32>(0.0); }
+  let stp = u.prm.z; let h = 16.0 / u.prm.x * 0.5;
+  var t = max(tmin, 0.0) + 0.5 * stp; var C = vec3<f32>(0.0); var A = 0.0; var prev = -1;
+  for (var k = 0; k < 600; k = k + 1) {
+    if (t > tmax || A > 0.96) { break; }
+    let p = ro + rd * t; let v = field(p); let c = classOf(v);
     if (c >= 0) {
-      var al = u.prm.w; var col = u.cols[c].rgb;
-      if (prev >= 0 && c != prev) { al = 0.42; col = col * 0.55; } // 자구 경계(자벽)는 진하게
+      let order = smoothstep(0.15, 0.6, length(v.xyz) / max(v.w, 0.001)); // 열 요동으로 정렬이 깨진 곳은 흐리게
+      var al = u.prm.w * order; var col = u.cols[c].rgb;
+      if (c != prev) { // 자구 경계면: 기울기로 면 방향을 구해 음영
+        let d = u.dirs[c].xyz;
+        let gx = dot(field(p + vec3<f32>(h, 0.0, 0.0)).xyz - field(p - vec3<f32>(h, 0.0, 0.0)).xyz, d);
+        let gy = dot(field(p + vec3<f32>(0.0, h, 0.0)).xyz - field(p - vec3<f32>(0.0, h, 0.0)).xyz, d);
+        let gz = dot(field(p + vec3<f32>(0.0, 0.0, h)).xyz - field(p - vec3<f32>(0.0, 0.0, h)).xyz, d);
+        var nrm = vec3<f32>(gx, gy, gz); if (prev < 0) { nrm = -rd; }
+        let n = normalize(nrm + vec3<f32>(1e-6));
+        let sh = 0.5 + 0.5 * abs(dot(n, u.light.xyz));
+        al = 0.5 * max(order, 0.25); col = col * sh;
+      }
       C = C + (1.0 - A) * al * col; A = A + (1.0 - A) * al;
     }
     prev = c; t = t + stp;
   }
   return vec4<f32>(C, A);
 }`;
-let gdom = null; // { ctx, pipe, ubuf, bg, simRef, canvas }
+let gdom = null; // { ctx, pipe, cpipe, ubuf, pbuf, smbuf, bg, cbg, simRef, canvas }
 function gpuDomActive() { return viewMode === 'domains' && useGPU && engine && engine.sim && microActive() && gpuDevice; }
 function ensureGpuDom() {
   if (gdom && gdom.failed) return null;
@@ -790,35 +829,44 @@ function ensureGpuDom() {
       uR.domElement.after(canvas);
       const ctx = canvas.getContext('webgpu'), format = navigator.gpu.getPreferredCanvasFormat();
       ctx.configure({ device: gpuDevice, format, alphaMode: 'premultiplied' });
-      const mod = gpuDevice.createShaderModule({ code: GPU_DOM_WGSL });
+      const mod = gpuDevice.createShaderModule({ code: GPU_DOM_WGSL }), cmod = gpuDevice.createShaderModule({ code: GPU_SMOOTH_WGSL });
       const pipe = gpuDevice.createRenderPipeline({ layout: 'auto', vertex: { module: mod, entryPoint: 'vs' }, fragment: { module: mod, entryPoint: 'fs', targets: [{ format }] }, primitive: { topology: 'triangle-list' } });
-      gdom = { canvas, ctx, pipe, ubuf: gpuDevice.createBuffer({ size: 336, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }), bg: null, simRef: null };
-      mod.getCompilationInfo().then(info => { if (info.messages.some(x => x.type === 'error')) { gdom.failed = true; canvas.style.display = 'none'; } });
+      const cpipe = gpuDevice.createComputePipeline({ layout: 'auto', compute: { module: cmod, entryPoint: 'smoothm' } });
+      gdom = { canvas, ctx, pipe, cpipe, ubuf: gpuDevice.createBuffer({ size: 352, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }), pbuf: gpuDevice.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }), smbuf: null, bg: null, cbg: null, simRef: null };
+      Promise.all([mod.getCompilationInfo(), cmod.getCompilationInfo()]).then(infos => { if (infos.some(info => info.messages.some(x => x.type === 'error'))) { gdom.failed = true; canvas.style.display = 'none'; } });
     }
     const sim = engine.sim;
     if (gdom.simRef !== sim) {
-      gdom.bg = gpuDevice.createBindGroup({ layout: gdom.pipe.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: gdom.ubuf } }, { binding: 1, resource: { buffer: sim.b.m } }, { binding: 2, resource: { buffer: sim.b.cellp } }] });
+      if (gdom.smbuf) gdom.smbuf.destroy();
+      gdom.smbuf = gpuDevice.createBuffer({ size: 16 * sim.n3, usage: GPUBufferUsage.STORAGE });
+      gdom.cbg = gpuDevice.createBindGroup({ layout: gdom.cpipe.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: gdom.pbuf } }, { binding: 1, resource: { buffer: sim.b.m } }, { binding: 2, resource: { buffer: sim.b.cellp } }, { binding: 3, resource: { buffer: gdom.smbuf } }] });
+      gdom.bg = gpuDevice.createBindGroup({ layout: gdom.pipe.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: gdom.ubuf } }, { binding: 1, resource: { buffer: gdom.smbuf } }] });
       gdom.simRef = sim;
     }
     return gdom;
   } catch (e) { gdom = { failed: true }; return null; }
 }
-const gdomU = new Float32Array(84), gdomM = new THREE.Matrix4();
+const gdomU = new Float32Array(88), gdomM = new THREE.Matrix4();
 function renderGpuDomains() {
   const g = ensureGpuDom(); if (!g) return false;
   const w = uR.domElement.width, h = uR.domElement.height;
   if (g.canvas.width !== w || g.canvas.height !== h) { g.canvas.width = w; g.canvas.height = h; }
   g.canvas.style.display = 'block';
+  const N = NGRID, n3 = N * N * N, rad = N >= 64 ? 2 : 1; // 칸이 촘촘할수록 넓게 평균 (실제 거리로는 비슷하게)
+  gpuDevice.queue.writeBuffer(g.pbuf, 0, new Int32Array([N, rad, 0, 0]));
   uCam.updateMatrixWorld(); gdomM.multiplyMatrices(uCam.matrixWorld, uCam.projectionMatrixInverse);
   gdomU.set(gdomM.elements, 0);
-  const E = easyDirs(), N = NGRID, stp = 16 / N * 0.6;
-  gdomU[16] = N; gdomU[17] = E.dirs.length; gdomU[18] = stp; gdomU[19] = 1 - Math.pow(0.45, stp / 16); // 정육면체를 다 지나도 약 55%만 가려지는 투명도
+  const E = easyDirs(), stp = Math.min(0.12, 16 / N * 0.35);
+  gdomU[16] = N; gdomU[17] = E.dirs.length; gdomU[18] = stp; gdomU[19] = 1 - Math.pow(0.85, stp / 16); // 안쪽은 아주 옇게, 경계면이 잘 보이도록
+  const L = new THREE.Vector3(0.4, 0.8, 0.45).normalize(); gdomU.set([L.x, L.y, L.z, 0], 20);
   for (let c = 0; c < 8; c++) {
     const d = E.dirs[c] || [0, 0, 0], col = E.dirs[c] ? dirColor(d) : new THREE.Color(0, 0, 0);
-    gdomU.set([d[0], d[1], d[2], 0], 20 + 4 * c); gdomU.set([col.r, col.g, col.b, 1], 52 + 4 * c);
+    gdomU.set([d[0], d[1], d[2], 0], 24 + 4 * c); gdomU.set([col.r, col.g, col.b, 1], 56 + 4 * c);
   }
   gpuDevice.queue.writeBuffer(g.ubuf, 0, gdomU);
   const enc = gpuDevice.createCommandEncoder();
+  const cp = enc.beginComputePass(); cp.setPipeline(g.cpipe); cp.setBindGroup(0, g.cbg);
+  const wgs = Math.ceil(n3 / 64); cp.dispatchWorkgroups(wgs <= 65535 ? wgs : 64, wgs <= 65535 ? 1 : Math.ceil(wgs / 64)); cp.end();
   const pass = enc.beginRenderPass({ colorAttachments: [{ view: g.ctx.getCurrentTexture().createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' }] });
   pass.setPipeline(g.pipe); pass.setBindGroup(0, g.bg); pass.draw(3); pass.end();
   gpuDevice.queue.submit([enc.finish()]);
