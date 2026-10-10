@@ -146,6 +146,7 @@ th { font-weight: 600; }
         <label class="chk"><input type="checkbox" id="flowChk" checked> 방향 흐름 점</label>
         <label class="chk"><input type="checkbox" id="arrowChk" checked> 평균 자화와 힘 화살표</label>
         <label class="chk"><input type="checkbox" id="blockChk" checked> 정육면체 속 자화 분포</label>
+        <label class="chk"><input type="checkbox" id="fitChk" checked> 자기력선이 모두 보이게 화면 맞춤</label>
       </div>
     </div>
   </section>
@@ -220,7 +221,7 @@ th { font-weight: 600; }
   <details open>
     <summary>무엇이 정확한 계산이고 무엇이 근사인가</summary>
     <p><b>자석의 자기장</b>은 균일하게 자화된 직육면체 자석(20×20×10 mm, 잔류자속밀도 1.3 T, 흔한 N42급)의 해석해로 계산해요. 자기력선은 자석 안쪽까지 이어서 그리기 때문에 모든 선이 닫힌 고리가 돼요. 흐름 점은 방향을 보여주는 표시일 뿐이고, 정지한 자기장에서 실제로 무언가 흐르지는 않아요.</p>
-    <p><b>자기력선을 그리는 기준</b>: 자석 한가운데를 자화 방향에 수직으로 자른 단면(2×2 cm)을 거의 같은 넓이로 16칸 나누고, 각 칸의 중심에서 선을 시작해요. 자석 내부의 자기장은 거의 균일하므로 각 선이 거의 같은 양의 자속을 나르고, 그래서 선이 촘촘한 곳일수록 자기장이 세다고 대략 읽을 수 있어요. 자기력선은 모두 닫힌 고리이고 자석이 만드는 고리는 반드시 자석 내부를 지나기 때문에, 자석 안에서 출발하면 모든 선을 한 바퀴 온전히 그릴 수 있어요. 선은 1.4 mm 간격으로 자기장 방향을 따라 중간점 방법으로 추적하고, 출발점으로 돌아오면 닫힌 것으로 봐요. 화면 밖으로 나가 잘리는 선과 계산 범위(중심에서 20 cm) 안에서 닫히지 않은 선은 그리지 않아요. 그래서 멀리 크게 도는 선은 시점에 따라 보였다 안 보였다 할 수 있어요. 정육면체가 자화되어 있으면 남은 자화를 보여주려고 정육면체 안에서 9개를 더 시작하는데, 이 선들은 같은 자속을 나르도록 고른 것이 아니라서 그 근처의 선 밀도는 세기로 읽으면 안 돼요. 선 위를 움직이는 점은 방향만 나타내요.</p>
+    <p><b>자기력선을 그리는 기준</b>: 자석 한가운데를 자화 방향에 수직으로 자른 단면(2×2 cm)을 거의 같은 넓이로 16칸 나누고, 각 칸의 중심에서 선을 시작해요. 자석 내부의 자기장은 거의 균일하므로 각 선이 거의 같은 양의 자속을 나르고, 그래서 선이 촘촘한 곳일수록 자기장이 세다고 대략 읽을 수 있어요. 자기력선은 모두 닫힌 고리이고 자석이 만드는 고리는 반드시 자석 내부를 지나기 때문에, 자석 안에서 출발하면 모든 선을 한 바퀴 온전히 그릴 수 있어요. 선은 자기장 방향을 따라 중간점 방법으로 추적하는데, 자석과 정육면체 근처에서는 0.6 mm까지 촘촘하게, 멀어질수록 거리에 비례해 크게(최대 9 mm) 걸어요. 그래서 자석 가운데 근처에서 출발해 15 cm 이상 크게 도는 고리도 끝까지 이어져 닫혀요. 출발점으로 돌아오면 닫힌 것으로 봐요. '자기력선이 모두 보이게 화면 맞춤'을 켜 두면 가장 큰 고리까지 화면에 들어오도록 카메라 거리가 자동으로 조절돼요. 시점을 직접 돌리는 동안에는 조절하지 않아요. 정육면체가 자화되어 있으면 남은 자화를 보여주려고 정육면체 안에서 9개를 더 시작하는데, 이 선들은 같은 자속을 나르도록 고른 것이 아니라서 그 근처의 선 밀도는 세기로 읽으면 안 돼요. 선 위를 움직이는 점은 방향만 나타내요.</p>
     <p><b>5 cm 정육면체의 반응</b>은 정육면체를 8×8×8 블록으로 나누어 계산해요. 각 블록은 자석의 자기장과 다른 모든 블록이 만드는 자기장을 함께 받고(블록 사이 상호작용은 Newell 텐서와 FFT로 정확히 계산), 블록의 자화는 그 자리의 자기장과 지금까지의 자화 이력에 따라 Jiles–Atherton 모형으로 정해져요. 모형 계수는 실제로 측정된 이력 곡선 값(보자력, 잔류자속밀도, 최대 투자율)에 맞춰 직접 구했고, 맞춘 정도는 아래 표에 있어요. 그래서 자석을 붙였다 떼면 남는 자화, 자석 쪽 면에 자화가 몰리는 모습, 끌림 힘이 측정 기반으로 나와요. 정육면체 모양 때문에 생기는 반자장이 매우 커서, 같은 재료라도 고리 모양 시편으로 잰 잔류자속밀도보다 훨씬 적게 남는 것도 이 계산에서 그대로 나타나요. 블록 한 변이 6.25 mm라 자석이 거의 닿은 상태의 힘은 오차가 커질 수 있어요. 자철석은 측정 이력 자료가 없어 선형 자화(상대 투자율 4)로 두었어요.</p>
     <p><b>나노 정육면체</b>는 탐침 위치에 놓인, 같은 재료로 된 독립된 나노 입자예요. 그 자리의 자석 자기장만 받는다고 놓고, 실제 물성값으로 Landau–Lifshitz–Gilbert 방정식을 풀어요. 교환, 결정 이방성(2차 계수 K₂ 포함), 반자장(FFT로 계산한 Newell 텐서), 외부 자기장, 열 요동, 결함을 넣었어요. 입자가 거의 한 방향으로 정렬되어 있으면 열로 뒤집히는 데 걸리는 시간을 Néel–Arrhenius 식으로 추정해서 보여줘요. 이 계산이 직접 따라갈 수 있는 시간은 나노초 단위라서, 그보다 긴 현상은 이 추정으로 보완해요. 16³ 또는 32³ 칸으로 나누며, 한 칸이 교환 길이보다 작도록 크기 범위를 재료마다 제한해요. GPU(WebGPU)를 쓸 수 있으면 같은 계산을 GPU로 해서 64³ 칸까지 실시간에 가깝게 돌릴 수 있어요. 페이지를 열 때마다 작은 상태를 CPU와 GPU로 함께 계산해서 결과가 일치할 때만 GPU를 써요. RTX 50 계열 GPU에서 확인한 결과, 결함 다섯 종류를 모두 넣은 상태에서 유효 자기장이 CPU와 상대 오차 약 10⁻⁷ 수준으로 일치했고, 200 스텝 뒤의 자화도 10⁻⁶ 이내로 같았어요(GPU는 단정밀도). 한 스텝 시간은 16³ 약 0.5 ms, 32³ 약 1.8 ms, 64³ 약 18 ms였어요. 다만 claude.ai 링크 안에서는 브라우저 보안 정책 때문에 GPU를 쓸 수 없어서, GPU 계산은 내려받은 HTML 파일을 크롬으로 열었을 때만 켜져요.</p>
     <p><b>크기의 차이</b>: 화면 속 나노 정육면체는 5 cm 정육면체의 확대 화면이 아니에요. 크기가 다르면 자구 배치 자체가 달라지기 때문이에요. 이 크기에서는 하나의 자구나 소용돌이 구조가 주로 나오고, 실제 5 cm 덩어리 안에는 결정립과 불순물의 영향을 받는 수십 μm 크기의 자구가 아주 많이 있어요.</p>
@@ -849,18 +850,21 @@ function makeMacroEngine(post) {
     return F;
   }
   function trace(seeds) {
-    const hs = 0.14, maxSteps = 320, b1 = [0, 0, 0], b2 = [0, 0, 0], out = [];
+    const maxSteps = 1500, b1 = [0, 0, 0], b2 = [0, 0, 0], out = [];
+    const stepSize = (p) => { const c = frame.c, dm = Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]), dc = Math.max(0, Math.hypot(p[0], p[1], p[2]) - 3.6); return Math.min(0.9, Math.max(0.06, 0.035 * Math.min(dm, dc + 1.2))); };
     for (const s of seeds) {
       const half = []; let closed = false;
       for (const dir of [1, -1]) {
-        const pts = [s.slice()]; let p = s.slice();
+        const pts = [s.slice()]; let p = s.slice(), travel = 0;
         for (let k = 0; k < maxSteps; k++) {
+          const hs = stepSize(p);
           Btotal(p[0], p[1], p[2], b1); let nn = Math.hypot(b1[0], b1[1], b1[2]) || 1;
           const mid = [p[0] + 0.5 * hs * dir * b1[0] / nn, p[1] + 0.5 * hs * dir * b1[1] / nn, p[2] + 0.5 * hs * dir * b1[2] / nn];
           Btotal(mid[0], mid[1], mid[2], b2); nn = Math.hypot(b2[0], b2[1], b2[2]) || 1;
           p = [p[0] + hs * dir * b2[0] / nn, p[1] + hs * dir * b2[1] / nn, p[2] + hs * dir * b2[2] / nn]; pts.push(p);
-          if (Math.hypot(p[0], p[1], p[2]) > 22) break;
-          if (k > 12 && Math.hypot(p[0] - s[0], p[1] - s[1], p[2] - s[2]) < hs * 0.9) { closed = true; pts.push(s.slice()); break; }
+          if (Math.hypot(p[0], p[1], p[2]) > 80) break;
+          travel += hs;
+          if (travel > 1.5 && Math.hypot(p[0] - s[0], p[1] - s[1], p[2] - s[2]) < Math.max(0.3, hs)) { closed = true; pts.push(s.slice()); break; } // 출발점 근처로 돌아오면 닫힘
         }
         half.push(pts); if (closed) break;
       }
@@ -889,13 +893,13 @@ function makeMacroEngine(post) {
     let lines = null;
     if (d.lines) {
       const R = frame.R, c = frame.c, seeds = [], g = [-0.7, -0.23, 0.23, 0.7];
-      for (const a of g) for (const b of g) seeds.push([c[0] + R[3] * a + R[6] * b, c[1] + R[4] * a + R[7] * b, c[2] + R[5] * a + R[8] * b]);
+      if (Math.hypot(c[0], c[1], c[2]) < 100) for (const a of g) for (const b of g) seeds.push([c[0] + R[3] * a + R[6] * b, c[1] + R[4] * a + R[7] * b, c[2] + R[5] * a + R[8] * b]);
       const am = Math.hypot(avg[0], avg[1], avg[2]);
-      if (anyJ && am > 1 && mat && !mat.small) { // 정육면체 자체의 자기력선 (자석을 치운 뒤 잔류 자화를 보기 위해)
+      if (anyJ && am > 1 && mat && !mat.small && Math.hypot(frame.c[0], frame.c[1], frame.c[2]) > 100) { // 자석을 치웠을 때만 // 정육면체 자체의 자기력선 (자석을 치운 뒤 잔류 자화를 보기 위해)
         const u = avg.map(v => v / am), t1 = Math.abs(u[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
         const e1 = [u[1] * t1[2] - u[2] * t1[1], u[2] * t1[0] - u[0] * t1[2], u[0] * t1[1] - u[1] * t1[0]], n1 = Math.hypot(...e1); e1.forEach((v, i) => e1[i] = v / n1);
         const e2 = [u[1] * e1[2] - u[2] * e1[1], u[2] * e1[0] - u[0] * e1[2], u[0] * e1[1] - u[1] * e1[0]];
-        for (const a of [-1.4, 0, 1.4]) for (const b of [-1.4, 0, 1.4]) seeds.push([a * e1[0] + b * e2[0], a * e1[1] + b * e2[1], a * e1[2] + b * e2[2]]);
+        for (const a of [-1.4, 0, 1.4]) for (const b of [-1.4, 0, 1.4]) if (a || b) seeds.push([a * e1[0] + b * e2[0], a * e1[1] + b * e2[1], a * e1[2] + b * e2[2]]); // 대칭축 위 선은 닫히지 않으므로 제외
       }
       const L = trace(seeds); let tot = 0; for (const l of L) tot += l.length;
       const pos = new Float32Array(3 * tot), len = new Int32Array(L.length); let w = 0;
@@ -1291,7 +1295,7 @@ function makeRenderer(container) {
 const macroView = $('macroView');
 const mR = makeRenderer(macroView);
 const mScene = new THREE.Scene();
-const mCam = new THREE.PerspectiveCamera(42, 1, 0.1, 200);
+const mCam = new THREE.PerspectiveCamera(42, 1, 0.1, 2000);
 mCam.position.set(9, 10, 17);
 mScene.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.85));
 const dl = new THREE.DirectionalLight(0xffffff, 0.6); dl.position.set(6, 12, 8); mScene.add(dl);
@@ -1304,7 +1308,7 @@ const cubeEdges = new THREE.LineSegments(new THREE.EdgesGeometry(cube.geometry),
 mScene.add(cubeEdges);
 
 // 바닥 격자 (방향 감각용)
-const grid = new THREE.GridHelper(30, 30, 0x9aa5ae, 0xbcc5cc);
+const grid = new THREE.GridHelper(120, 120, 0x9aa5ae, 0xbcc5cc);
 grid.position.y = -2.5 - 0.01; grid.material.transparent = true; grid.material.opacity = 0.35;
 mScene.add(grid);
 
@@ -1363,7 +1367,7 @@ function axisTriad(scene, pos, len, labelSize) {
 axisTriad(mScene, new THREE.Vector3(-13, -2.5, 9), 2, 0.9);
 
 // 자기력선
-const MAX_LINES = 26, MAX_PTS = 700;
+const MAX_LINES = 26, MAX_PTS = 3000;
 const linePos = new Float32Array(MAX_LINES * MAX_PTS * 2 * 3);
 const lineGeo = new THREE.BufferGeometry();
 lineGeo.setAttribute('position', new THREE.BufferAttribute(linePos, 3));
@@ -1379,7 +1383,7 @@ mScene.add(dotObj);
 let lines = [], allLines = []; // 화면에 보이는 선 / 계산된 전체 선
 let flowPhase = 0;
 
-let touchDragMagnet = false;
+let touchDragMagnet = false, userOrbiting = false;
 const mCtl = (function () {
   // 자석 끌기: OrbitControls보다 먼저 등록
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -1447,9 +1451,9 @@ const mCtl = (function () {
   const end = () => { if (dragging) { dragging = false; controls.enabled = true; try { el.releasePointerCapture(pid); } catch (e) {} el.style.cursor = ''; } };
   el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
   const controls = new THREE.OrbitControls(mCam, el);
-  controls.target.set(-1.5, 0, 0); controls.enableDamping = true; controls.minDistance = 6; controls.maxDistance = 60;
+  controls.target.set(-1.5, 0, 0); controls.enableDamping = true; controls.minDistance = 6; controls.maxDistance = 400;
   controls.touches.TWO = THREE.TOUCH.DOLLY_ROTATE;
-  controls.addEventListener('change', () => { lineViewDirty = true; });
+  controls.addEventListener('start', () => { userOrbiting = true; }); controls.addEventListener('end', () => { userOrbiting = false; fitWanted = true; });
   return controls;
 })();
 
@@ -1512,30 +1516,38 @@ function BtargetPV(x, y, z, out) {
 }
 const pvb = [0, 0, 0];
 function BtotalPV(x, y, z, out) { if (magnetAway) { out[0] = out[1] = out[2] = 0; } else Btool(x, y, z, out); BtargetPV(x, y, z, pvb); out[0] += pvb[0]; out[1] += pvb[1]; out[2] += pvb[2]; return out; }
+// 자석과 정육면체 근처는 촘촘하게, 멀리 갈수록 크게 걷기 (멀리 도는 큰 고리도 끝까지 닫히도록)
+function stepSize(p) {
+  const c = MF.c, dm = Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]);
+  const dc = Math.max(0, Math.hypot(p[0], p[1], p[2]) - 3.6);
+  return Math.min(0.9, Math.max(0.06, 0.035 * Math.min(dm, dc + 1.2)));
+}
 function tracePreview() {
   if (!$('linesChk').checked) { allLines = []; drawLines(); return; }
   const R = MF.R, c = MF.c, seeds = [], g = [-0.7, -0.23, 0.23, 0.7];
   if (!magnetAway) for (const a of g) for (const b of g) seeds.push([c[0] + R[3] * a + R[6] * b, c[1] + R[4] * a + R[7] * b, c[2] + R[5] * a + R[8] * b]);
   const am = Math.hypot(...pvAvg);
-  if (pvAny && am > 1 && MATS[matKey].kind === 'ferro') {
+  if (pvAny && am > 1 && MATS[matKey].kind === 'ferro' && magnetAway) {
     const u = pvAvg.map(v => v / am), t1 = Math.abs(u[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
     const e1 = [u[1] * t1[2] - u[2] * t1[1], u[2] * t1[0] - u[0] * t1[2], u[0] * t1[1] - u[1] * t1[0]], n1 = Math.hypot(...e1); e1.forEach((v, i) => e1[i] = v / n1);
     const e2 = [u[1] * e1[2] - u[2] * e1[1], u[2] * e1[0] - u[0] * e1[2], u[0] * e1[1] - u[1] * e1[0]];
-    for (const a of [-1.4, 0, 1.4]) for (const b of [-1.4, 0, 1.4]) seeds.push([a * e1[0] + b * e2[0], a * e1[1] + b * e2[1], a * e1[2] + b * e2[2]]);
+    for (const a of [-1.4, 0, 1.4]) for (const b of [-1.4, 0, 1.4]) if (a || b) seeds.push([a * e1[0] + b * e2[0], a * e1[1] + b * e2[1], a * e1[2] + b * e2[2]]);
   }
-  const hs = 0.14, maxSteps = 320, b1 = [0, 0, 0], b2 = [0, 0, 0];
+  const maxSteps = 1500, b1 = [0, 0, 0], b2 = [0, 0, 0];
   allLines = [];
   for (const s of seeds) {
     const half = []; let closed = false;
     for (const dir of [1, -1]) {
-      const pts = [s.slice()]; let p = s.slice();
+      const pts = [s.slice()]; let p = s.slice(), travel = 0;
       for (let k = 0; k < maxSteps; k++) {
+        const hs = stepSize(p);
         BtotalPV(p[0], p[1], p[2], b1); let nn = Math.hypot(b1[0], b1[1], b1[2]) || 1;
         const mid = [p[0] + 0.5 * hs * dir * b1[0] / nn, p[1] + 0.5 * hs * dir * b1[1] / nn, p[2] + 0.5 * hs * dir * b1[2] / nn];
         BtotalPV(mid[0], mid[1], mid[2], b2); nn = Math.hypot(b2[0], b2[1], b2[2]) || 1;
         p = [p[0] + hs * dir * b2[0] / nn, p[1] + hs * dir * b2[1] / nn, p[2] + hs * dir * b2[2] / nn]; pts.push(p);
-        if (Math.hypot(p[0], p[1], p[2]) > 22) break;
-        if (k > 12 && Math.hypot(p[0] - s[0], p[1] - s[1], p[2] - s[2]) < hs * 0.9) { closed = true; pts.push(s.slice()); break; }
+        if (Math.hypot(p[0], p[1], p[2]) > 80) break;
+        travel += hs;
+        if (travel > 1.5 && Math.hypot(p[0] - s[0], p[1] - s[1], p[2] - s[2]) < Math.max(0.3, hs)) { closed = true; pts.push(s.slice()); break; }
       }
       half.push(pts); if (closed) break;
     }
@@ -1548,7 +1560,7 @@ function tracePreview() {
 }
 // 고리가 닫히지 않았거나 화면 밖으로 나가 잘리는 선은 그리지 않음
 const pv = new THREE.Vector3();
-function lineFullyVisible(L) {
+function lineFullyVisible_unused(L) {
   const n = L.n, a = L.arr;
   if (Math.hypot(a[0] - a[3 * n - 3], a[1] - a[3 * n - 2], a[2] - a[3 * n - 1]) > 0.2) return false; // 닫히지 않은 선
   for (let i = 0; i < n; i++) {
@@ -1557,9 +1569,22 @@ function lineFullyVisible(L) {
   }
   return true;
 }
-let lineViewDirty = false;
+let lineViewDirty = false, fitWanted = true, fitDist = null;
+// 자기력선 전체가 화면에 들어오도록 카메라 거리 계산 (방향과 중심은 그대로, 거리만 조절)
+function computeFit() {
+  if (!$('fitChk').checked || !lines.length) { fitDist = null; return; }
+  const tgt = mCtl.target, dir = new THREE.Vector3().subVectors(mCam.position, tgt).normalize();
+  const cam = mCam.clone(); const pts = [];
+  for (const L of lines) for (let i = 0; i < L.n; i += 3) pts.push(L.arr[3 * i], L.arr[3 * i + 1], L.arr[3 * i + 2]);
+  for (const sx of [-2.5, 2.5]) for (const sy of [-2.5, 2.5]) for (const sz of [-2.5, 2.5]) pts.push(sx, sy, sz);
+  const ok = (dist) => { cam.position.copy(tgt).addScaledVector(dir, dist); cam.lookAt(tgt); cam.updateMatrixWorld(); cam.updateProjectionMatrix();
+    for (let i = 0; i < pts.length; i += 3) { pv.set(pts[i], pts[i + 1], pts[i + 2]).project(cam); if (pv.z > 1 || pv.z < -1 || Math.abs(pv.x) > 0.93 || Math.abs(pv.y) > 0.9) return false; } return true; };
+  let lo = 21, hi = 400; if (ok(lo)) { fitDist = lo; return; } // 기본 거리보다 가까이 당기지는 않음
+  for (let k = 0; k < 24; k++) { const mid = 0.5 * (lo + hi); if (ok(mid)) hi = mid; else lo = mid; }
+  fitDist = hi;
+}
 function drawLines() {
-  mCam.updateMatrixWorld(); lines = allLines.filter(lineFullyVisible);
+  lines = allLines; fitWanted = true;
   let w = 0;
   for (const L of lines) for (let i = 0; i < L.n - 1 && w < linePos.length - 6; i++) { for (let k = 0; k < 6; k++) linePos[w++] = L.arr[3 * i + k]; }
   lineGeo.attributes.position.needsUpdate = true; lineGeo.setDrawRange(0, w / 3); lineGeo.computeBoundingSphere();
@@ -2072,6 +2097,7 @@ $('defAmt').addEventListener('change', () => sendConfig());
 $('defAmt').addEventListener('input', (e) => { $('defAmtVal').textContent = Math.round(e.target.value * 100) + '%'; });
 $('defNew').addEventListener('click', () => { defSeed = (defSeed * 1103515245 + 12345) >>> 0; sendConfig(); });
 $('markChk').addEventListener('change', drawMarks);
+$('fitChk').addEventListener('change', () => { fitWanted = true; });
 $('thermFix').addEventListener('change', () => sendConfig());
 $('gridSel').addEventListener('change', (e) => setGrid(+e.target.value));
 $('gpuChk').addEventListener('change', (e) => setEngineMode(e.target.checked));
@@ -2102,7 +2128,7 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', app
 
 const touchHintText = '한 손가락: 스크롤 · 두 손가락: 회전과 확대 · 자석 길게 누르기: 잡아서 옮기기';
 function resize() {
-  lineViewDirty = true;
+  fitWanted = true;
   for (const [r, cam, el] of [[mR, mCam, macroView], [uR, uCam, microView]]) {
     const w = el.clientWidth, h = el.clientHeight; if (!w || !h) continue;
     r.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix();
@@ -2129,7 +2155,11 @@ function loop(now) {
       `계산된 시간 ${fmtT(microFrame.tns)}${rateText(microFrame.tns)}, ${microFrame.thermal ? `<b>${Math.round(tempK)} K 열 요동 중</b>` : microFrame.stable ? '<b>안정 상태</b>' : '자리 잡는 중'}` +
       neelText(mat, edge, a) + warnText(mat);
   }
-  if (lineViewDirty) { lineViewDirty = false; drawLines(); }
+  if (fitWanted) { fitWanted = false; computeFit(); }
+  if (fitDist && !userOrbiting) {
+    const off = new THREE.Vector3().subVectors(mCam.position, mCtl.target), d = off.length();
+    if (Math.abs(d - fitDist) > 0.02) { off.setLength(d + (fitDist - d) * Math.min(1, dt * 4)); mCam.position.copy(mCtl.target).add(off); }
+  }
   updateDots(dt);
   mCtl.update(); uCtl.update();
   mR.render(mScene, mCam); uR.render(uScene, uCam);
