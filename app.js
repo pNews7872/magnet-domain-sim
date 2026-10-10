@@ -548,7 +548,7 @@ function makeGpuEngine(device, post) {
       }
     }
   })();
-  return { msg(d) { chain = chain.then(() => handle(d)).catch(e => { gpuNote = 'GPU 오류로 CPU로 전환: ' + e.message; fallbackToCPU(); }); }, tick: () => false, stop() { alive = false; if (sim) sim.destroy(); } };
+  return { msg(d) { chain = chain.then(() => handle(d)).catch(e => { gpuNote = 'GPU 오류로 CPU로 전환: ' + e.message; fallbackToCPU(); }); }, tick: () => false, stop() { alive = false; if (sim) sim.destroy(); }, get sim() { return sim; } };
 }
 async function gpuSelfTest(dev) { // 같은 상태를 CPU와 GPU로 계산해 비교
   const N = 8, defs = buildDefects(N, { seed: 3, amount: 0.7, incl: true, gb: true, poly: true, prec: true, precK: 5e5 });
@@ -673,7 +673,7 @@ function easyDirs() {
 }
 function dirName(d) { const f = (v) => v > 0.5 ? '+' : v < -0.5 ? '−' : ''; if (Math.abs(d[0]) > 0.9) return f(d[0]) + 'x'; if (Math.abs(d[1]) > 0.9) return f(d[1]) + 'y'; if (Math.abs(d[2]) > 0.9) return f(d[2]) + 'z'; return '[' + d.map(v => v > 0 ? '+' : '−').join('') + ']'; }
 function dirColor(d) { let hue = Math.atan2(d[2], d[0]) / (2 * Math.PI); if (hue < 0) hue += 1; return new THREE.Color().setHSL(hue, 0.72, 0.42 + 0.3 * d[1]); }
-function buildDomains(m) {
+function buildDomains(m, statsOnly) {
   while (domGroup.children.length) { const o = domGroup.children.pop(); o.geometry.dispose(); o.material.dispose(); }
   const N = NGRID, n3 = N * N * N, E = easyDirs(), dirs = E.dirs, K = dirs.length, cls = new Int8Array(n3).fill(-1);
   for (let id = 0; id < n3; id++) {
@@ -697,7 +697,8 @@ function buildDomains(m) {
   const gi = (x, y, z) => x + G * (y + G * z), ci = (x, y, z) => x + (G - 1) * (y + (G - 1) * z);
   const wpos = (gx) => (gx - 1 - o) * SP;
   let total = 0;
-  for (let c = 0; c < K; c++) {
+  if (statsOnly) for (let c = 0; c < K; c++) total += stats[c].vol;
+  for (let c = 0; c < K && !statsOnly; c++) {
     if (!stats[c].vol) continue;
     f.fill(0);
     for (let z = 0; z < N; z++) for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (cls[x + N * (y + N * z)] === c) f[gi(x + 1, y + 1, z + 1)] = 1;
@@ -737,6 +738,93 @@ function buildDomains(m) {
   domStatsHTML = `<br>자구 기준: ${E.label}, 덩어리 ${rows.reduce((s, r) => s + r.comps, 0)}개<br>` +
     rows.map(r => `<span style="display:inline-block;width:.75em;height:.75em;border-radius:2px;vertical-align:-1px;background:#${dirColor(dirs[r.c]).getHexString()}"></span> ${dirName(dirs[r.c])} ${(100 * r.vol / (total || 1)).toFixed(0)}%${r.comps > 1 ? ` (${r.comps}개)` : ''}`).join(' &nbsp;');
 }
+// ===== GPU 자구 보기: GPU에 있는 자화 데이터를 그대로 광선 추적해서 매 화면마다 그림 (CPU로 옮기지 않음) =====
+const GPU_DOM_WGSL = `
+struct U { invVP: mat4x4<f32>, prm: vec4<f32>, dirs: array<vec4<f32>, 8>, cols: array<vec4<f32>, 8> };
+@group(0) @binding(0) var<uniform> u: U;
+@group(0) @binding(1) var<storage, read> m: array<f32>;
+@group(0) @binding(2) var<storage, read> cellp: array<f32>;
+struct VO { @builtin(position) pos: vec4<f32>, @location(0) ndc: vec2<f32> };
+@vertex fn vs(@builtin(vertex_index) i: u32) -> VO {
+  var p = array<vec2<f32>, 3>(vec2<f32>(-1.0, -1.0), vec2<f32>(3.0, -1.0), vec2<f32>(-1.0, 3.0));
+  var o: VO; o.pos = vec4<f32>(p[i], 0.0, 1.0); o.ndc = p[i]; return o;
+}
+fn cls(id: u32) -> i32 {
+  if (cellp[3u * id] == 0.0) { return -1; }
+  let v = vec3<f32>(m[3u * id], m[3u * id + 1u], m[3u * id + 2u]);
+  var best = 0; var bv = -9.0;
+  for (var c = 0; c < i32(u.prm.y); c = c + 1) { let d = dot(v, u.dirs[c].xyz); if (d > bv) { bv = d; best = c; } }
+  return best;
+}
+@fragment fn fs(i: VO) -> @location(0) vec4<f32> {
+  let a = u.invVP * vec4<f32>(i.ndc, -1.0, 1.0); let b = u.invVP * vec4<f32>(i.ndc, 1.0, 1.0);
+  let ro = a.xyz / a.w; let rd = normalize(b.xyz / b.w - ro);
+  let inv = 1.0 / rd; let t0 = (vec3<f32>(-8.0) - ro) * inv; let t1 = (vec3<f32>(8.0) - ro) * inv;
+  let tmin = max(max(min(t0.x, t1.x), min(t0.y, t1.y)), min(t0.z, t1.z));
+  let tmax = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
+  if (tmax <= max(tmin, 0.0)) { return vec4<f32>(0.0); }
+  let N = u32(u.prm.x); let stp = u.prm.z;
+  var t = max(tmin, 0.0) + 0.5 * stp; var C = vec3<f32>(0.0); var A = 0.0; var prev = -2;
+  for (var k = 0; k < 1200; k = k + 1) {
+    if (t > tmax || A > 0.97) { break; }
+    let p = ro + rd * t;
+    let g = min(vec3<u32>(max((p + vec3<f32>(8.0)) / 16.0 * u.prm.x, vec3<f32>(0.0))), vec3<u32>(N - 1u));
+    let c = cls(g.x + N * (g.y + N * g.z));
+    if (c >= 0) {
+      var al = u.prm.w; var col = u.cols[c].rgb;
+      if (prev >= 0 && c != prev) { al = 0.42; col = col * 0.55; } // 자구 경계(자벽)는 진하게
+      C = C + (1.0 - A) * al * col; A = A + (1.0 - A) * al;
+    }
+    prev = c; t = t + stp;
+  }
+  return vec4<f32>(C, A);
+}`;
+let gdom = null; // { ctx, pipe, ubuf, bg, simRef, canvas }
+function gpuDomActive() { return viewMode === 'domains' && useGPU && engine && engine.sim && microActive() && gpuDevice; }
+function ensureGpuDom() {
+  if (gdom && gdom.failed) return null;
+  try {
+    if (!gdom) {
+      const canvas = document.createElement('canvas'); canvas.className = 'gpudom';
+      canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none;';
+      uR.domElement.after(canvas);
+      const ctx = canvas.getContext('webgpu'), format = navigator.gpu.getPreferredCanvasFormat();
+      ctx.configure({ device: gpuDevice, format, alphaMode: 'premultiplied' });
+      const mod = gpuDevice.createShaderModule({ code: GPU_DOM_WGSL });
+      const pipe = gpuDevice.createRenderPipeline({ layout: 'auto', vertex: { module: mod, entryPoint: 'vs' }, fragment: { module: mod, entryPoint: 'fs', targets: [{ format }] }, primitive: { topology: 'triangle-list' } });
+      gdom = { canvas, ctx, pipe, ubuf: gpuDevice.createBuffer({ size: 336, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }), bg: null, simRef: null };
+      mod.getCompilationInfo().then(info => { if (info.messages.some(x => x.type === 'error')) { gdom.failed = true; canvas.style.display = 'none'; } });
+    }
+    const sim = engine.sim;
+    if (gdom.simRef !== sim) {
+      gdom.bg = gpuDevice.createBindGroup({ layout: gdom.pipe.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: gdom.ubuf } }, { binding: 1, resource: { buffer: sim.b.m } }, { binding: 2, resource: { buffer: sim.b.cellp } }] });
+      gdom.simRef = sim;
+    }
+    return gdom;
+  } catch (e) { gdom = { failed: true }; return null; }
+}
+const gdomU = new Float32Array(84), gdomM = new THREE.Matrix4();
+function renderGpuDomains() {
+  const g = ensureGpuDom(); if (!g) return false;
+  const w = uR.domElement.width, h = uR.domElement.height;
+  if (g.canvas.width !== w || g.canvas.height !== h) { g.canvas.width = w; g.canvas.height = h; }
+  g.canvas.style.display = 'block';
+  uCam.updateMatrixWorld(); gdomM.multiplyMatrices(uCam.matrixWorld, uCam.projectionMatrixInverse);
+  gdomU.set(gdomM.elements, 0);
+  const E = easyDirs(), N = NGRID, stp = 16 / N * 0.6;
+  gdomU[16] = N; gdomU[17] = E.dirs.length; gdomU[18] = stp; gdomU[19] = 1 - Math.pow(0.45, stp / 16); // 정육면체를 다 지나도 약 55%만 가려지는 투명도
+  for (let c = 0; c < 8; c++) {
+    const d = E.dirs[c] || [0, 0, 0], col = E.dirs[c] ? dirColor(d) : new THREE.Color(0, 0, 0);
+    gdomU.set([d[0], d[1], d[2], 0], 20 + 4 * c); gdomU.set([col.r, col.g, col.b, 1], 52 + 4 * c);
+  }
+  gpuDevice.queue.writeBuffer(g.ubuf, 0, gdomU);
+  const enc = gpuDevice.createCommandEncoder();
+  const pass = enc.beginRenderPass({ colorAttachments: [{ view: g.ctx.getCurrentTexture().createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: 'clear', storeOp: 'store' }] });
+  pass.setPipeline(g.pipe); pass.setBindGroup(0, g.bg); pass.draw(3); pass.end();
+  gpuDevice.queue.submit([enc.finish()]);
+  return true;
+}
+function hideGpuDomains() { if (gdom && gdom.canvas) gdom.canvas.style.display = 'none'; }
 function visible(x, y, z) {
   const L = NGRID - 1;
   if (viewMode === 'all') return true;
@@ -1007,7 +1095,7 @@ function loop(now) {
   if (!useWorker && cpuEngine && !useGPU) cpuEngine.tick(12);
   if (microFrame && microFrame !== lastDrawnFrame && microActive()) {
     lastDrawnFrame = microFrame; drawMicro(microFrame.m);
-    if (viewMode === 'domains' && performance.now() - domLastBuild > (NGRID >= 64 ? 700 : 300)) { domLastBuild = performance.now(); buildDomains(microFrame.m); }
+    if (viewMode === 'domains' && performance.now() - domLastBuild > (NGRID >= 64 ? 700 : 300)) { domLastBuild = performance.now(); buildDomains(microFrame.m, gpuDomActive() && !(gdom && gdom.failed)); }
     const mat = MATS[matKey], a = microFrame.avg, edge = +$('edgeSl').value;
     if (!$('markChk').disabled && marksDirty) { marksDirty = false; drawMarks(); }
     const hB = Math.hypot(...probeB);
@@ -1022,6 +1110,7 @@ function loop(now) {
   }
   updateDots(dt);
   mCtl.update(); uCtl.update();
+  if (gpuDomActive() && renderGpuDomains()) domGroup.visible = false; else { hideGpuDomains(); domGroup.visible = viewMode === 'domains'; }
   mR.render(mScene, mCam); uR.render(uScene, uCam);
   requestAnimationFrame(loop);
 }
