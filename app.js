@@ -1019,6 +1019,7 @@ function markDirty() { dirty = true; }
 function edgeLimits() { const m = MATS[matKey]; if (m.kind !== 'ferro') return null; const max = Math.floor(NGRID * lexOf(m) * 1e9 * 0.95); return { min: 10, max }; }
 let defSeed = 12345, thermFix = 1;
 const SHAPE_NAME = { cube: '정육면체', sphere: '구', plate: '얇은 판', disk: '원판', rod: '막대' };
+const SIZE_LABEL = { cube: '한 변', sphere: '지름', plate: '가로·세로', disk: '지름', rod: '길이' };
 function defectCfg() {
   const on = (id) => $(id).checked;
   const shape = $('shapeSel').value, any = on('dInc') || on('dGb') || on('dPoly') || on('dPrec');
@@ -1197,7 +1198,20 @@ $('defAmt').addEventListener('change', () => sendConfig());
 $('defAmt').addEventListener('input', (e) => { $('defAmtVal').textContent = Math.round(e.target.value * 100) + '%'; });
 $('defNew').addEventListener('click', () => { defSeed = (defSeed * 1103515245 + 12345) >>> 0; sendConfig(); });
 $('markChk').addEventListener('change', drawMarks);
-$('shapeSel').addEventListener('change', () => sendConfig('random'));
+// 테두리를 입자 모양에 맞춰 그림 (계산은 정육면체 상자 안에서 하지만, 보이는 테두리는 실제 입자 모양)
+function updateFrame() {
+  const sh = $('shapeSel').value, mat = frameBox.material, g = new THREE.Group();
+  frameBox.visible = sh === 'cube';
+  if (window.__shapeFrame) { uScene.remove(window.__shapeFrame); window.__shapeFrame.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+  const box = (sx, sy, sz) => g.add(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(sx, sy, sz)), mat));
+  const ring = (r, y, axis) => { const pts = []; for (let i = 0; i <= 96; i++) { const a = i / 96 * Math.PI * 2; pts.push(axis === 'y' ? new THREE.Vector3(r * Math.cos(a), y, r * Math.sin(a)) : axis === 'x' ? new THREE.Vector3(y, r * Math.cos(a), r * Math.sin(a)) : new THREE.Vector3(r * Math.cos(a), r * Math.sin(a), y)); } g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat)); };
+  if (sh === 'plate') box(16, 4, 16);
+  else if (sh === 'rod') box(16, 16 / 3, 16 / 3);
+  else if (sh === 'disk') { ring(8, 2, 'y'); ring(8, -2, 'y'); for (const a of [0, Math.PI / 2, Math.PI, 1.5 * Math.PI]) g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(8 * Math.cos(a), -2, 8 * Math.sin(a)), new THREE.Vector3(8 * Math.cos(a), 2, 8 * Math.sin(a))]), mat)); }
+  else if (sh === 'sphere') { ring(8, 0, 'y'); ring(8, 0, 'x'); ring(8, 0, 'z'); }
+  window.__shapeFrame = g; uScene.add(g);
+}
+$('shapeSel').addEventListener('change', () => { updateFrame(); sendConfig('random'); });
 $('thermFix').addEventListener('change', () => sendConfig());
 $('gridSel').addEventListener('change', (e) => setGrid(+e.target.value));
 $('gpuChk').addEventListener('change', (e) => setEngineMode(e.target.checked));
@@ -1249,7 +1263,7 @@ function loop(now) {
     hArrow.visible = hB > 1e-5;
     if (hArrow.visible) { const d = new THREE.Vector3(...probeB).normalize(); hArrow.position.copy(d.clone().multiplyScalar(-15)); hArrow.setDirection(d); hArrow.setLength(5, 1.6, 1.0); }
     $('microReadout').innerHTML =
-      `${mat.name} 나노 ${SHAPE_NAME[$('shapeSel').value]}, 바깥 상자 한 변 <b>${edge} nm</b> (한 칸 ${(edge / NGRID).toFixed(2)} nm, ${NGRID}³ 칸, ${microFrame.gpu ? 'GPU' : 'CPU'}${thermFix > 1.0005 ? `, 열 보정 Ms ×${thermFix.toFixed(3)}` : ''})<br>` +
+      `${mat.name} 나노 ${SHAPE_NAME[$('shapeSel').value]}, ${SIZE_LABEL[$('shapeSel').value]} <b>${edge} nm</b> (한 칸 ${(edge / NGRID).toFixed(2)} nm, ${NGRID}³ 칸, ${microFrame.gpu ? 'GPU' : 'CPU'}${thermFix > 1.0005 ? `, 열 보정 Ms ×${thermFix.toFixed(3)}` : ''})<br>` +
       `받는 자기장: <b>${(hB * 1000).toFixed(hB < 0.001 ? 2 : 0)} mT</b> (주황 화살표)<br>` +
       `평균 자화 방향 ⟨m⟩ = (${a.map(v => v.toFixed(2)).join(', ')})<br>` +
       `계산된 시간 ${fmtT(microFrame.tns)}${rateText(microFrame.tns)}, ${microFrame.thermal ? `<b>${Math.round(tempK)} K 열 요동 중</b>` : microFrame.stable ? '<b>안정 상태</b>' : '자리 잡는 중'}` +
