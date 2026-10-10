@@ -220,7 +220,7 @@ th { font-weight: 600; }
   <details open>
     <summary>무엇이 정확한 계산이고 무엇이 근사인가</summary>
     <p><b>자석의 자기장</b>은 균일하게 자화된 직육면체 자석(20×20×10 mm, 잔류자속밀도 1.3 T, 흔한 N42급)의 해석해로 계산해요. 자기력선은 자석 안쪽까지 이어서 그리기 때문에 모든 선이 닫힌 고리가 돼요. 흐름 점은 방향을 보여주는 표시일 뿐이고, 정지한 자기장에서 실제로 무언가 흐르지는 않아요.</p>
-    <p><b>자기력선을 그리는 기준</b>: 자석 한가운데를 자화 방향에 수직으로 자른 단면(2×2 cm)을 거의 같은 넓이로 16칸 나누고, 각 칸의 중심에서 선을 시작해요. 자석 내부의 자기장은 거의 균일하므로 각 선이 거의 같은 양의 자속을 나르고, 그래서 선이 촘촘한 곳일수록 자기장이 세다고 대략 읽을 수 있어요. 자기력선은 모두 닫힌 고리이고 자석이 만드는 고리는 반드시 자석 내부를 지나기 때문에, 자석 안에서 출발하면 모든 선을 한 바퀴 온전히 그릴 수 있어요. 선은 자기장 방향을 따라 중간점 방법으로 추적하는데, 자석과 정육면체 근처에서는 0.6 mm까지 촘촘하게, 멀어질수록 거리에 비례해 크게(최대 9 mm) 걸어요. 그래서 자석 가운데 근처에서 출발해 15 cm 이상 크게 도는 고리도 끝까지 이어져 닫혀요. 출발점으로 돌아오면 닫힌 것으로 봐요. 가장 큰 고리는 중심에서 약 20 cm까지 나가므로, 전체를 보려면 화면을 축소해 보세요. 정육면체가 자화되어 있으면 남은 자화를 보여주려고 정육면체 안에서 9개를 더 시작하는데, 이 선들은 같은 자속을 나르도록 고른 것이 아니라서 그 근처의 선 밀도는 세기로 읽으면 안 돼요. 선 위를 움직이는 점은 방향만 나타내요.</p>
+    <p><b>자기력선을 그리는 기준</b>: 자석 한가운데를 자화 방향에 수직으로 자른 단면(2×2 cm)에서 실제 자기장을 계산해, 각 칸을 지나는 자속이 똑같도록 단면을 36칸으로 나누고 각 칸의 자속 중앙에서 선을 시작해요. 그래서 모든 선이 정확히 같은 양의 자속을 나르고, 선이 촘촘한 곳일수록 자기장이 세다고 읽을 수 있어요(선 밀도가 세기에 비례하도록 그리는 패러데이의 방식). 정육면체를 지나는 선은 주황색으로 표시해서, 자석의 자속 중 얼마만큼이 철을 통과하는지 한눈에 보이게 했어요. 자기력선은 모두 닫힌 고리이고 자석이 만드는 고리는 반드시 자석 내부를 지나기 때문에, 자석 안에서 출발하면 모든 선을 한 바퀴 온전히 그릴 수 있어요. 선은 자기장 방향을 따라 중간점 방법으로 추적하는데, 자석과 정육면체 근처에서는 0.6 mm까지 촘촘하게, 멀어질수록 거리에 비례해 크게(최대 9 mm) 걸어요. 그래서 자석 가운데 근처에서 출발해 15 cm 이상 크게 도는 고리도 끝까지 이어져 닫혀요. 출발점으로 돌아오면 닫힌 것으로 봐요. 가장 큰 고리는 중심에서 약 20 cm까지 나가므로, 전체를 보려면 화면을 축소해 보세요. 정육면체가 자화되어 있으면 남은 자화를 보여주려고 정육면체 안에서 9개를 더 시작하는데, 이 선들은 같은 자속을 나르도록 고른 것이 아니라서 그 근처의 선 밀도는 세기로 읽으면 안 돼요. 선 위를 움직이는 점은 방향만 나타내요.</p>
     <p><b>5 cm 정육면체의 반응</b>은 정육면체를 8×8×8 블록으로 나누어 계산해요. 각 블록은 자석의 자기장과 다른 모든 블록이 만드는 자기장을 함께 받고(블록 사이 상호작용은 Newell 텐서와 FFT로 정확히 계산), 블록의 자화는 그 자리의 자기장과 지금까지의 자화 이력에 따라 Jiles–Atherton 모형으로 정해져요. 모형 계수는 실제로 측정된 이력 곡선 값(보자력, 잔류자속밀도, 최대 투자율)에 맞춰 직접 구했고, 맞춘 정도는 아래 표에 있어요. 그래서 자석을 붙였다 떼면 남는 자화, 자석 쪽 면에 자화가 몰리는 모습, 끌림 힘이 측정 기반으로 나와요. 정육면체 모양 때문에 생기는 반자장이 매우 커서, 같은 재료라도 고리 모양 시편으로 잰 잔류자속밀도보다 훨씬 적게 남는 것도 이 계산에서 그대로 나타나요. 블록 한 변이 6.25 mm라 자석이 거의 닿은 상태의 힘은 오차가 커질 수 있어요. 자철석은 측정 이력 자료가 없어 선형 자화(상대 투자율 4)로 두었어요.</p>
     <p><b>나노 정육면체</b>는 탐침 위치에 놓인, 같은 재료로 된 독립된 나노 입자예요. 그 자리의 자석 자기장만 받는다고 놓고, 실제 물성값으로 Landau–Lifshitz–Gilbert 방정식을 풀어요. 교환, 결정 이방성(2차 계수 K₂ 포함), 반자장(FFT로 계산한 Newell 텐서), 외부 자기장, 열 요동, 결함을 넣었어요. 입자가 거의 한 방향으로 정렬되어 있으면 열로 뒤집히는 데 걸리는 시간을 Néel–Arrhenius 식으로 추정해서 보여줘요. 이 계산이 직접 따라갈 수 있는 시간은 나노초 단위라서, 그보다 긴 현상은 이 추정으로 보완해요. 16³ 또는 32³ 칸으로 나누며, 한 칸이 교환 길이보다 작도록 크기 범위를 재료마다 제한해요. GPU(WebGPU)를 쓸 수 있으면 같은 계산을 GPU로 해서 64³ 칸까지 실시간에 가깝게 돌릴 수 있어요. 페이지를 열 때마다 작은 상태를 CPU와 GPU로 함께 계산해서 결과가 일치할 때만 GPU를 써요. RTX 50 계열 GPU에서 확인한 결과, 결함 다섯 종류를 모두 넣은 상태에서 유효 자기장이 CPU와 상대 오차 약 10⁻⁷ 수준으로 일치했고, 200 스텝 뒤의 자화도 10⁻⁶ 이내로 같았어요(GPU는 단정밀도). 한 스텝 시간은 16³ 약 0.5 ms, 32³ 약 1.8 ms, 64³ 약 18 ms였어요. 다만 claude.ai 링크 안에서는 브라우저 보안 정책 때문에 GPU를 쓸 수 없어서, GPU 계산은 내려받은 HTML 파일을 크롬으로 열었을 때만 켜져요.</p>
     <p><b>크기의 차이</b>: 화면 속 나노 정육면체는 5 cm 정육면체의 확대 화면이 아니에요. 크기가 다르면 자구 배치 자체가 달라지기 때문이에요. 이 크기에서는 하나의 자구나 소용돌이 구조가 주로 나오고, 실제 5 cm 덩어리 안에는 결정립과 불순물의 영향을 받는 수십 μm 크기의 자구가 아주 많이 있어요.</p>
@@ -774,6 +774,27 @@ class MacroSolver {
   }
 }
 
+// ===== 같은 자속 기준 시작점: 자석 가운데 단면을 실제 자속이 같은 n×n 칸으로 나눠 각 칸의 자속 중앙에서 시작 =====
+function equalFluxSeeds(Bf, R, c, n, hy, hz) {
+  const NS = 40, u = [R[0], R[1], R[2]], b = [0, 0, 0], w = new Float64Array(NS * NS);
+  const pos = (y, z) => [c[0] + R[3] * y + R[6] * z, c[1] + R[4] * y + R[7] * z, c[2] + R[5] * y + R[8] * z];
+  const ys = (i) => -hy + 2 * hy * (i + 0.5) / NS, zs = (j) => -hz + 2 * hz * (j + 0.5) / NS;
+  for (let i = 0; i < NS; i++) for (let j = 0; j < NS; j++) { const p = pos(ys(i), zs(j)); Bf(p[0], p[1], p[2], b); w[i * NS + j] = Math.max(0, b[0] * u[0] + b[1] * u[1] + b[2] * u[2]); }
+  // 누적 분포의 역함수 (칸 안에서는 선형 보간)
+  const inv = (cdf, q, lo, span) => { const tot = cdf[cdf.length - 1], t = q * tot; let k = 0; while (k < cdf.length - 1 && cdf[k + 1] < t) k++; const a = cdf[k], d = (cdf[k + 1] - a) || 1; return lo + span * (k + (t - a) / d) / (cdf.length - 1); };
+  const rowSum = new Float64Array(NS); for (let i = 0; i < NS; i++) for (let j = 0; j < NS; j++) rowSum[i] += w[i * NS + j];
+  const cdfY = new Float64Array(NS + 1); for (let i = 0; i < NS; i++) cdfY[i + 1] = cdfY[i] + rowSum[i];
+  const seeds = [];
+  for (let a = 0; a < n; a++) {
+    const y0 = inv(cdfY, a / n, -hy, 2 * hy), y1 = inv(cdfY, (a + 1) / n, -hy, 2 * hy), yc = inv(cdfY, (a + 0.5) / n, -hy, 2 * hy);
+    // 이 띠 안의 z 방향 분포 (경계에 걸친 행은 겹친 비율만큼)
+    const colSum = new Float64Array(NS);
+    for (let i = 0; i < NS; i++) { const r0 = -hy + 2 * hy * i / NS, r1 = r0 + 2 * hy / NS, f = Math.max(0, Math.min(r1, y1) - Math.max(r0, y0)) / (r1 - r0); if (f > 0) for (let j = 0; j < NS; j++) colSum[j] += f * w[i * NS + j]; }
+    const cdfZ = new Float64Array(NS + 1); for (let j = 0; j < NS; j++) cdfZ[j + 1] = cdfZ[j] + colSum[j];
+    for (let k = 0; k < n; k++) seeds.push(pos(yc, inv(cdfZ, (k + 0.5) / n, -hz, 2 * hz)));
+  }
+  return seeds;
+}
 // ===== 거시 엔진: 자석 자기장, 블록 해석, 힘, 자기력선 =====
 function makeMacroEngine(post) {
   const n = 8, TH = 2.5, MAG_HALF = [0.5, 1, 1], BR = 1.3;
@@ -891,8 +912,8 @@ function makeMacroEngine(post) {
     const F = computeForce(M);
     let lines = null;
     if (d.lines) {
-      const R = frame.R, c = frame.c, seeds = [], g = [-0.7, -0.23, 0.23, 0.7];
-      if (Math.hypot(c[0], c[1], c[2]) < 100) for (const a of g) for (const b of g) seeds.push([c[0] + R[3] * a + R[6] * b, c[1] + R[4] * a + R[7] * b, c[2] + R[5] * a + R[8] * b]);
+      const R = frame.R, c = frame.c, seeds = [];
+      if (Math.hypot(c[0], c[1], c[2]) < 100) seeds.push(...equalFluxSeeds(Btotal, R, c, 6, MAG_HALF[1], MAG_HALF[2]));
       const am = Math.hypot(avg[0], avg[1], avg[2]);
       if (anyJ && am > 1 && mat && !mat.small && Math.hypot(frame.c[0], frame.c[1], frame.c[2]) > 100) { // 자석을 치웠을 때만 // 정육면체 자체의 자기력선 (자석을 치운 뒤 잔류 자화를 보기 위해)
         const u = avg.map(v => v / am), t1 = Math.abs(u[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
@@ -1366,12 +1387,15 @@ function axisTriad(scene, pos, len, labelSize) {
 axisTriad(mScene, new THREE.Vector3(-13, -2.5, 9), 2, 0.9);
 
 // 자기력선
-const MAX_LINES = 26, MAX_PTS = 3000;
+const MAX_LINES = 46, MAX_PTS = 3000;
 const linePos = new Float32Array(MAX_LINES * MAX_PTS * 2 * 3);
 const lineGeo = new THREE.BufferGeometry();
 lineGeo.setAttribute('position', new THREE.BufferAttribute(linePos, 3));
+const lineCol = new Float32Array(MAX_LINES * MAX_PTS * 2 * 3);
+lineGeo.setAttribute('color', new THREE.BufferAttribute(lineCol, 3));
 lineGeo.setDrawRange(0, 0);
-const lineMat = new THREE.LineBasicMaterial({ color: 0x1d2630, transparent: true, opacity: 0.5 });
+const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, vertexColors: true, transparent: true, opacity: 0.6 });
+const lineInk = new THREE.Color(0x1d2630), lineHot = new THREE.Color(0xc2541b); // 기본 선 / 정육면체를 지나는 선
 const lineObj = new THREE.LineSegments(lineGeo, lineMat);
 mScene.add(lineObj);
 const DOTS_PER = 14, dotPos = new Float32Array(MAX_LINES * DOTS_PER * 3);
@@ -1522,8 +1546,8 @@ function stepSize(p) {
 }
 function tracePreview() {
   if (!$('linesChk').checked) { allLines = []; drawLines(); return; }
-  const R = MF.R, c = MF.c, seeds = [], g = [-0.7, -0.23, 0.23, 0.7];
-  if (!magnetAway) for (const a of g) for (const b of g) seeds.push([c[0] + R[3] * a + R[6] * b, c[1] + R[4] * a + R[7] * b, c[2] + R[5] * a + R[8] * b]);
+  const R = MF.R, c = MF.c, seeds = [];
+  if (!magnetAway) seeds.push(...equalFluxSeeds(BtotalPV, R, c, 6, MAG_HALF[1], MAG_HALF[2]));
   const am = Math.hypot(...pvAvg);
   if (pvAny && am > 1 && MATS[matKey].kind === 'ferro' && magnetAway) {
     const u = pvAvg.map(v => v / am), t1 = Math.abs(u[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
@@ -1571,7 +1595,12 @@ let lineViewDirty = false;
 function drawLines() {
   lines = allLines;
   let w = 0;
-  for (const L of lines) for (let i = 0; i < L.n - 1 && w < linePos.length - 6; i++) { for (let k = 0; k < 6; k++) linePos[w++] = L.arr[3 * i + k]; }
+  for (const L of lines) {
+    let thru = false; for (let i = 0; i < L.n && !thru; i++) thru = Math.abs(L.arr[3 * i]) < 2.5 && Math.abs(L.arr[3 * i + 1]) < 2.5 && Math.abs(L.arr[3 * i + 2]) < 2.5;
+    const cc = thru ? lineHot : lineInk;
+    for (let i = 0; i < L.n - 1 && w < linePos.length - 6; i++) { for (let k = 0; k < 6; k++) { lineCol[w] = k % 3 === 0 ? cc.r : k % 3 === 1 ? cc.g : cc.b; linePos[w++] = L.arr[3 * i + k]; } }
+  }
+  lineGeo.attributes.color.needsUpdate = true;
   lineGeo.attributes.position.needsUpdate = true; lineGeo.setDrawRange(0, w / 3); lineGeo.computeBoundingSphere();
 }
 function onMacroMsg(d) {
@@ -1583,7 +1612,7 @@ function onMacroMsg(d) {
   if (macroQueued) { macroQueued = false; requestMacro(); }
 }
 (function startMacro() {
-  const deps = [f_N, g_N, newell, dipoleN, demagTensor, makeFFT, cuboidH_z, cuboidH, langevin, jaMan, jaStep, MacroSolver, makeMacroEngine];
+  const deps = [f_N, g_N, newell, dipoleN, demagTensor, makeFFT, cuboidH_z, cuboidH, langevin, jaMan, jaStep, MacroSolver, equalFluxSeeds, makeMacroEngine];
   try {
     const src = ['const MU0 = ' + MU0 + ', W3 = [-1, 2, -1];'].concat(deps.map(f => f.toString()), [
       'const E = makeMacroEngine((d, tr) => postMessage(d, tr || []));', 'onmessage = (e) => E.msg(e.data);']).join('\n');
@@ -2100,7 +2129,7 @@ function applyTheme() {
   mR.setClearColor(new THREE.Color(cssColor('--scene') || '#dfe5e9'));
   uR.setClearColor(new THREE.Color(cssColor('--scene') || '#dfe5e9'));
   const ink = new THREE.Color(cssColor('--ink') || '#1d2630');
-  lineMat.color.copy(ink); dotMat.color.copy(ink);
+  lineInk.copy(ink); dotMat.color.copy(ink); lineHot.set(ink.getHSL({}).l > 0.5 ? 0xf08a4b : 0xc2541b); if (lines.length) drawLines();
   mArrow.setColor(ink);
   const dark = ink.getHSL({}).l > 0.5;
   lineMat.opacity = dark ? 0.55 : 0.5;
