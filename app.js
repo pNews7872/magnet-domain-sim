@@ -662,9 +662,85 @@ axisTriad(uScene, new THREE.Vector3(-15, -8, 12), 3, 1.4);
 const tmpM = new THREE.Matrix4(), tmpQ = new THREE.Quaternion(), tmpP = new THREE.Vector3(), tmpS = new THREE.Vector3(1, 1, 1), up = new THREE.Vector3(0, 1, 0), dirV = new THREE.Vector3(), col = new THREE.Color();
 const zeroS = new THREE.Vector3(0, 0, 0), tmpS2 = new THREE.Vector3();
 let viewMode = 'surface';
+// ===== 자구 덩어리 보기: 각 칸을 가장 가까운 쉬운 자화 방향으로 나누고, 같은 방향끼리 묶어 3D 덩어리로 그림 =====
+const domGroup = new THREE.Group(); uScene.add(domGroup);
+let domLastBuild = 0, domStatsHTML = '';
+function easyDirs() {
+  const mat = MATS[matKey], eff = matAtT(mat, tempK), r3 = 1 / Math.sqrt(3);
+  if (eff.aniso === 'uniaxial') { const a = mat.axis; return { dirs: [a, a.map(v => -v)], label: '용이축 ±' + (a[1] ? 'y' : a[0] ? 'x' : 'z') }; }
+  if (eff.aniso === 'cubic' && eff.K1 < 0) { const d = []; for (const sx of [1, -1]) for (const sy of [1, -1]) for (const sz of [1, -1]) d.push([sx * r3, sy * r3, sz * r3]); return { dirs: d, label: '⟨111⟩ 8방향' }; }
+  return { dirs: [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]], label: eff.aniso === 'cubic' ? '⟨100⟩ 6방향' : '가장 가까운 좌표축 6방향' };
+}
+function dirName(d) { const f = (v) => v > 0.5 ? '+' : v < -0.5 ? '−' : ''; if (Math.abs(d[0]) > 0.9) return f(d[0]) + 'x'; if (Math.abs(d[1]) > 0.9) return f(d[1]) + 'y'; if (Math.abs(d[2]) > 0.9) return f(d[2]) + 'z'; return '[' + d.map(v => v > 0 ? '+' : '−').join('') + ']'; }
+function dirColor(d) { let hue = Math.atan2(d[2], d[0]) / (2 * Math.PI); if (hue < 0) hue += 1; return new THREE.Color().setHSL(hue, 0.72, 0.42 + 0.3 * d[1]); }
+function buildDomains(m) {
+  while (domGroup.children.length) { const o = domGroup.children.pop(); o.geometry.dispose(); o.material.dispose(); }
+  const N = NGRID, n3 = N * N * N, E = easyDirs(), dirs = E.dirs, K = dirs.length, cls = new Int8Array(n3).fill(-1);
+  for (let id = 0; id < n3; id++) {
+    if (defectKind[id] === 1) continue;
+    let best = 0, bv = -9; for (let c = 0; c < K; c++) { const v = m[3 * id] * dirs[c][0] + m[3 * id + 1] * dirs[c][1] + m[3 * id + 2] * dirs[c][2]; if (v > bv) { bv = v; best = c; } }
+    cls[id] = best;
+  }
+  // 같은 방향끼리 이어진 덩어리 수 (아주 작은 조각은 제외)
+  const seen = new Uint8Array(n3), stack = new Int32Array(n3), minSize = Math.max(4, Math.round(0.003 * n3)), stats = [];
+  for (let c = 0; c < K; c++) stats.push({ vol: 0, comps: 0 });
+  for (let id = 0; id < n3; id++) {
+    if (cls[id] < 0 || seen[id]) continue;
+    const c = cls[id]; let sp = 0, size = 0; stack[sp++] = id; seen[id] = 1;
+    while (sp) { const q = stack[--sp]; size++; const x = q % N, y = ((q / N) | 0) % N, z = (q / (N * N)) | 0;
+      const nb = [x > 0 ? q - 1 : -1, x < N - 1 ? q + 1 : -1, y > 0 ? q - N : -1, y < N - 1 ? q + N : -1, z > 0 ? q - N * N : -1, z < N - 1 ? q + N * N : -1];
+      for (const j of nb) if (j >= 0 && !seen[j] && cls[j] === c) { seen[j] = 1; stack[sp++] = j; } }
+    stats[c].vol += size; if (size >= minSize) stats[c].comps++;
+  }
+  // 덩어리 표면: 같은 방향 영역의 경계를 surface nets 방식으로 매끈한 면으로 만듦
+  const G = N + 2, o = (N - 1) / 2, f = new Uint8Array(G * G * G), vidx = new Int32Array((G - 1) * (G - 1) * (G - 1));
+  const gi = (x, y, z) => x + G * (y + G * z), ci = (x, y, z) => x + (G - 1) * (y + (G - 1) * z);
+  const wpos = (gx) => (gx - 1 - o) * SP;
+  let total = 0;
+  for (let c = 0; c < K; c++) {
+    if (!stats[c].vol) continue;
+    f.fill(0);
+    for (let z = 0; z < N; z++) for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (cls[x + N * (y + N * z)] === c) f[gi(x + 1, y + 1, z + 1)] = 1;
+    const pos = [], idx = []; vidx.fill(-1);
+    for (let z = 0; z < G - 1; z++) for (let y = 0; y < G - 1; y++) for (let x = 0; x < G - 1; x++) {
+      let s = 0; for (let k = 0; k < 8; k++) s += f[gi(x + (k & 1), y + ((k >> 1) & 1), z + (k >> 2))];
+      if (s === 0 || s === 8) continue;
+      // 부호가 바뀌는 모서리들의 중점 평균
+      let px = 0, py = 0, pz = 0, cnt = 0;
+      const E3 = [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]];
+      for (const [a, b] of E3) {
+        const va = f[gi(x + (a & 1), y + ((a >> 1) & 1), z + (a >> 2))], vb = f[gi(x + (b & 1), y + ((b >> 1) & 1), z + (b >> 2))];
+        if (va !== vb) { px += x + ((a & 1) + (b & 1)) / 2; py += y + (((a >> 1) & 1) + ((b >> 1) & 1)) / 2; pz += z + ((a >> 2) + (b >> 2)) / 2; cnt++; }
+      }
+      vidx[ci(x, y, z)] = pos.length / 3; pos.push(wpos(px / cnt), wpos(py / cnt), wpos(pz / cnt));
+    }
+    // 부호가 바뀌는 격자 모서리마다 주변 네 칸의 꼭짓점을 잇는 사각형
+    for (let z = 1; z < G - 1; z++) for (let y = 1; y < G - 1; y++) for (let x = 1; x < G - 1; x++) {
+      const v0 = f[gi(x, y, z)];
+      for (let ax = 0; ax < 3; ax++) {
+        const x2 = x + (ax === 0), y2 = y + (ax === 1), z2 = z + (ax === 2); if (x2 >= G || y2 >= G || z2 >= G) continue;
+        const v1 = f[gi(x2, y2, z2)]; if (v0 === v1) continue;
+        let q;
+        if (ax === 0) q = [ci(x, y - 1, z - 1), ci(x, y, z - 1), ci(x, y, z), ci(x, y - 1, z)];
+        else if (ax === 1) q = [ci(x - 1, y, z - 1), ci(x - 1, y, z), ci(x, y, z), ci(x, y, z - 1)];
+        else q = [ci(x - 1, y - 1, z), ci(x, y - 1, z), ci(x, y, z), ci(x - 1, y, z)];
+        const a = vidx[q[0]], b = vidx[q[1]], cc = vidx[q[2]], d = vidx[q[3]]; if (a < 0 || b < 0 || cc < 0 || d < 0) continue;
+        if (v0) idx.push(a, b, cc, a, cc, d); else idx.push(a, cc, b, a, d, cc);
+      }
+    }
+    if (!idx.length) continue;
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setIndex(idx); geo.computeVertexNormals();
+    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: dirColor(dirs[c]), transparent: true, opacity: 0.55, roughness: 0.6, side: THREE.DoubleSide, depthWrite: false }));
+    domGroup.add(mesh); total += stats[c].vol;
+  }
+  const rows = stats.map((st, c) => ({ c, ...st })).filter(r => r.vol > 0).sort((a, b) => b.vol - a.vol);
+  domStatsHTML = `<br>자구 기준: ${E.label}, 덩어리 ${rows.reduce((s, r) => s + r.comps, 0)}개<br>` +
+    rows.map(r => `<span style="display:inline-block;width:.75em;height:.75em;border-radius:2px;vertical-align:-1px;background:#${dirColor(dirs[r.c]).getHexString()}"></span> ${dirName(dirs[r.c])} ${(100 * r.vol / (total || 1)).toFixed(0)}%${r.comps > 1 ? ` (${r.comps}개)` : ''}`).join(' &nbsp;');
+}
 function visible(x, y, z) {
   const L = NGRID - 1;
   if (viewMode === 'all') return true;
+  if (viewMode === 'domains') return false; // 자구 보기에서는 화살표 대신 자구 덩어리를 그림
   if (viewMode === 'surface') return x === 0 || y === 0 || z === 0 || x === L || y === L || z === L;
   const a = $('sliceAxis').value, k = +$('sliceSl').value;
   return (a === 'x' ? x : a === 'y' ? y : z) === k;
@@ -894,7 +970,7 @@ $('alphaSl').addEventListener('input', (e) => { $('alphaVal').textContent = (+e.
 document.querySelectorAll('[data-init]').forEach(b => b.addEventListener('click', () => engine.msg({ type: 'reset', state: b.dataset.init })));
 $('pauseBtn').addEventListener('click', (e) => { const p = e.target.getAttribute('aria-pressed') !== 'true'; e.target.setAttribute('aria-pressed', p ? 'true' : 'false'); e.target.textContent = p ? '계속' : '일시정지'; engine.msg({ type: 'run', on: !p }); });
 document.querySelectorAll('[data-vm]').forEach(b => b.addEventListener('click', () => {
-  viewMode = b.dataset.vm; markVis(); document.querySelectorAll('[data-vm]').forEach(x => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
+  viewMode = b.dataset.vm; markVis(); domLastBuild = 0; domGroup.visible = viewMode === 'domains'; if (viewMode === 'domains' && microFrame) buildDomains(microFrame.m); document.querySelectorAll('[data-vm]').forEach(x => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
   if (microFrame) drawMicro(microFrame.m); drawMarks();
 }));
 ['sliceAxis', 'sliceSl'].forEach(id => $(id).addEventListener('input', () => { markVis(); if (viewMode !== 'slice') document.querySelector('[data-vm="slice"]').click(); else { if (microFrame) drawMicro(microFrame.m); drawMarks(); } }));
@@ -931,6 +1007,7 @@ function loop(now) {
   if (!useWorker && cpuEngine && !useGPU) cpuEngine.tick(12);
   if (microFrame && microFrame !== lastDrawnFrame && microActive()) {
     lastDrawnFrame = microFrame; drawMicro(microFrame.m);
+    if (viewMode === 'domains' && performance.now() - domLastBuild > (NGRID >= 64 ? 700 : 300)) { domLastBuild = performance.now(); buildDomains(microFrame.m); }
     const mat = MATS[matKey], a = microFrame.avg, edge = +$('edgeSl').value;
     if (!$('markChk').disabled && marksDirty) { marksDirty = false; drawMarks(); }
     const hB = Math.hypot(...probeB);
@@ -941,7 +1018,7 @@ function loop(now) {
       `받는 자기장: <b>${(hB * 1000).toFixed(hB < 0.001 ? 2 : 0)} mT</b> (주황 화살표)<br>` +
       `평균 자화 방향 ⟨m⟩ = (${a.map(v => v.toFixed(2)).join(', ')})<br>` +
       `계산된 시간 ${fmtT(microFrame.tns)}${rateText(microFrame.tns)}, ${microFrame.thermal ? `<b>${Math.round(tempK)} K 열 요동 중</b>` : microFrame.stable ? '<b>안정 상태</b>' : '자리 잡는 중'}` +
-      neelText(mat, edge, a) + warnText(mat);
+      neelText(mat, edge, a) + warnText(mat) + (viewMode === 'domains' ? domStatsHTML : '');
   }
   updateDots(dt);
   mCtl.update(); uCtl.update();
