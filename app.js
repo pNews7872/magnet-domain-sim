@@ -79,9 +79,9 @@ let targetJ = [0, 0, 0]; // μ0 M (T)
 let targetM = [0, 0, 0];
 let forceN = [0, 0, 0];
 
-function makeRenderer(container) {
+function makeRenderer(container, alpha) {
   let r;
-  try { r = new THREE.WebGLRenderer({ antialias: true, alpha: false }); }
+  try { r = new THREE.WebGLRenderer({ antialias: true, alpha: !!alpha }); }
   catch (e) { container.innerHTML = '<div class="overlay on"><div>이 브라우저에서 WebGL을 사용할 수 없어 3D 화면을 그릴 수 없어요. 다른 브라우저에서 열어 보세요.</div></div>'; throw e; }
   r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   container.insertBefore(r.domElement, container.firstChild);
@@ -618,7 +618,7 @@ let microFrame = null;
 
 // ===== 미시 장면 =====
 const microView = $('microView');
-const uR = makeRenderer(microView);
+const uR = makeRenderer(microView, true);
 const uScene = new THREE.Scene();
 const uCam = new THREE.PerspectiveCamera(40, 1, 0.1, 400);
 uCam.position.set(30, 24, 42);
@@ -826,7 +826,8 @@ function ensureGpuDom() {
     if (!gdom) {
       const canvas = document.createElement('canvas'); canvas.className = 'gpudom';
       canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none;';
-      uR.domElement.after(canvas);
+      uR.domElement.before(canvas); uR.domElement.style.position = 'relative'; uR.domElement.style.zIndex = '1'; // GPU 자구는 아래, 선과 틀은 위에
+      microView.querySelectorAll('.readout, .hint, .overlay').forEach(e => { e.style.zIndex = '2'; });
       const ctx = canvas.getContext('webgpu'), format = navigator.gpu.getPreferredCanvasFormat();
       ctx.configure({ device: gpuDevice, format, alphaMode: 'premultiplied' });
       const mod = gpuDevice.createShaderModule({ code: GPU_DOM_WGSL }), cmod = gpuDevice.createShaderModule({ code: GPU_SMOOTH_WGSL });
@@ -871,6 +872,96 @@ function renderGpuDomains() {
   pass.setPipeline(g.pipe); pass.setBindGroup(0, g.bg); pass.draw(3); pass.end();
   gpuDevice.queue.submit([enc.finish()]);
   return true;
+}
+// ===== 자화 흐름선: 입자 안에서 자화 방향을 따라 이어지는 선과 그 위를 흐르는 점 =====
+const UF_LINES = 140, UF_PTS = 500;
+const ufPos = new Float32Array(UF_LINES * UF_PTS * 6), ufGeo = new THREE.BufferGeometry();
+ufGeo.setAttribute('position', new THREE.BufferAttribute(ufPos, 3)); ufGeo.setDrawRange(0, 0);
+const ufMat = new THREE.LineBasicMaterial({ color: 0x1d2630, transparent: true, opacity: 0.75, depthTest: false });
+const ufObj = new THREE.LineSegments(ufGeo, ufMat); ufObj.renderOrder = 5; uScene.add(ufObj);
+const ufDotPos = new Float32Array(UF_LINES * 60 * 3), ufDotGeo = new THREE.BufferGeometry();
+ufDotGeo.setAttribute('position', new THREE.BufferAttribute(ufDotPos, 3)); ufDotGeo.setDrawRange(0, 0);
+const ufDots = new THREE.Points(ufDotGeo, new THREE.PointsMaterial({ color: 0xd08a10, size: 0.32, sizeAttenuation: true, depthTest: false }));
+ufDots.renderOrder = 6; uScene.add(ufDots);
+let ufLines = [], ufPhase = 0, ufLast = 0, ufFrame = null;
+function smoothField(m, N, rad) { // 칸 크기 열 요동을 걷어내려고 주변 칸과 평균 (자성 칸만)
+  const n3 = N * N * N, out = new Float32Array(3 * n3), tmp = new Float32Array(3 * n3), cnt = new Float32Array(n3), cnt2 = new Float32Array(n3);
+  let src = m, srcW = null;
+  for (let ax = 0; ax < 3; ax++) { // 축마다 나눠서 평균 (상자 평균과 같음)
+    const st = ax === 0 ? 1 : ax === 1 ? N : N * N, dst = ax === 2 ? out : (ax === 0 ? tmp : new Float32Array(3 * n3)), dW = ax === 0 ? cnt : cnt2;
+    for (let id = 0; id < n3; id++) {
+      const c = ax === 0 ? id % N : ax === 1 ? ((id / N) | 0) % N : (id / (N * N)) | 0;
+      let sx = 0, sy = 0, sz = 0, w = 0;
+      for (let d = -rad; d <= rad; d++) { const cc = c + d; if (cc < 0 || cc >= N) continue; const j = id + d * st;
+        const wj = ax === 0 ? (defectKind[j] === 1 ? 0 : 1) : srcW[j]; if (!wj) continue; sx += src[3 * j] * wj; sy += src[3 * j + 1] * wj; sz += src[3 * j + 2] * wj; w += wj; }
+      dst[3 * id] = w ? sx / w : 0; dst[3 * id + 1] = w ? sy / w : 0; dst[3 * id + 2] = w ? sz / w : 0; if (ax < 2) dW[id] = w ? 1 : 0;
+    }
+    src = dst; srcW = dW;
+  }
+  return out;
+}
+function sampleField(f, N, p, out) { // 화면 좌표 p에서 삼선형 보간, 입자 밖이거나 비자성이면 false
+  const SPc = 16 / N, qx = (p[0] + 8) / SPc - 0.5, qy = (p[1] + 8) / SPc - 0.5, qz = (p[2] + 8) / SPc - 0.5;
+  if (qx < -0.5 || qy < -0.5 || qz < -0.5 || qx > N - 0.5 || qy > N - 0.5 || qz > N - 0.5) return false;
+  const cl = (v) => Math.max(0, Math.min(N - 1, v));
+  const x0 = Math.floor(qx), y0 = Math.floor(qy), z0 = Math.floor(qz), fx = qx - x0, fy = qy - y0, fz = qz - z0;
+  out[0] = out[1] = out[2] = 0;
+  for (let k = 0; k < 8; k++) {
+    const xi = cl(x0 + (k & 1)), yi = cl(y0 + ((k >> 1) & 1)), zi = cl(z0 + (k >> 2)), w = ((k & 1) ? fx : 1 - fx) * (((k >> 1) & 1) ? fy : 1 - fy) * ((k >> 2) ? fz : 1 - fz);
+    const id = xi + N * (yi + N * zi); out[0] += w * f[3 * id]; out[1] += w * f[3 * id + 1]; out[2] += w * f[3 * id + 2];
+  }
+  const ci = cl(Math.round(qx)) + N * (cl(Math.round(qy)) + N * cl(Math.round(qz)));
+  return defectKind[ci] !== 1;
+}
+function traceFlow(m) {
+  const N = NGRID, f = smoothField(m, N, N >= 64 ? 2 : 1), g = 7, hs = Math.max(0.12, 0.45 * 16 / N), maxSteps = UF_PTS / 2 - 2, v = [0, 0, 0], v2 = [0, 0, 0];
+  ufLines = [];
+  // 선끼리 너무 붙지 않게: 공간을 7×7×7 칸으로 나눠 이미 다른 선이 지나간 칸에 들어가면 멈춤
+  const OG = 7, occ = new Int16Array(OG * OG * OG).fill(-1), ocell = (p) => { const q = (x) => Math.max(0, Math.min(OG - 1, Math.floor((x + 8) / 16 * OG))); return q(p[0]) + OG * (q(p[1]) + OG * q(p[2])); };
+  for (let a = 0; a < g; a++) for (let b = 0; b < g; b++) for (let c = 0; c < g; c++) {
+    const s = [-8 + 16 * (a + 0.5) / g, -8 + 16 * (b + 0.5) / g, -8 + 16 * (c + 0.5) / g], me = ufLines.length;
+    if (occ[ocell(s)] >= 0) continue;
+    if (!sampleField(f, N, s, v) || Math.hypot(v[0], v[1], v[2]) < 0.2) continue;
+    const half = []; let closed = false;
+    for (const dir of [1, -1]) {
+      const pts = [s.slice()]; let p = s.slice(), travel = 0;
+      for (let k = 0; k < maxSteps; k++) {
+        if (!sampleField(f, N, p, v)) break; let n = Math.hypot(v[0], v[1], v[2]); if (n < 0.2) break; // 정렬이 깨진 곳에서는 멈춤
+        const mid = [p[0] + 0.5 * hs * dir * v[0] / n, p[1] + 0.5 * hs * dir * v[1] / n, p[2] + 0.5 * hs * dir * v[2] / n];
+        if (!sampleField(f, N, mid, v2)) break; n = Math.hypot(v2[0], v2[1], v2[2]); if (n < 0.2) break;
+        p = [p[0] + hs * dir * v2[0] / n, p[1] + hs * dir * v2[1] / n, p[2] + hs * dir * v2[2] / n];
+        const oc = occ[ocell(p)]; if (oc >= 0 && oc !== me) break; // 다른 선 근처면 멈춤
+        pts.push(p); travel += hs; if (travel > 48) break; // 소용돌이에서 끝없이 감기지 않게
+        if (travel > 3 && Math.hypot(p[0] - s[0], p[1] - s[1], p[2] - s[2]) < Math.max(hs, 0.6)) { closed = true; pts.push(s.slice()); break; } // 입자 안에서 한 바퀴 돌아 닫힘
+      }
+      half.push(pts); if (closed) break;
+    }
+    let pts = half[0]; if (!closed && half[1]) pts = half[1].slice(1).reverse().concat(half[0]);
+    if (pts.length < 6) continue;
+    for (const q of pts) { const k = ocell(q); if (occ[k] < 0) occ[k] = me; }
+    const n = Math.min(pts.length, UF_PTS), arr = new Float32Array(3 * n), cum = new Float32Array(n);
+    for (let i = 0; i < n; i++) { arr[3 * i] = pts[i][0]; arr[3 * i + 1] = pts[i][1]; arr[3 * i + 2] = pts[i][2]; if (i) cum[i] = cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1], pts[i][2] - pts[i - 1][2]); }
+    ufLines.push({ arr, cum, n, len: cum[n - 1] || 1, closed });
+    if (ufLines.length >= UF_LINES) break;
+  }
+  let w = 0;
+  for (const L of ufLines) for (let i = 0; i < L.n - 1 && w < ufPos.length - 6; i++) for (let k = 0; k < 6; k++) ufPos[w++] = L.arr[3 * i + k];
+  ufGeo.attributes.position.needsUpdate = true; ufGeo.setDrawRange(0, w / 3); ufGeo.computeBoundingSphere();
+}
+function updateFlowDots(dt) {
+  const on = $('uflowChk').checked && microActive() && ufLines.length;
+  ufObj.visible = ufDots.visible = !!on; if (!on) return;
+  ufPhase += dt * 2.2; let w = 0;
+  for (const L of ufLines) {
+    const nd = Math.max(1, Math.min(60, Math.round(L.len / 1.1))), sp = L.len / nd;
+    for (let k = 0; k < nd; k++) {
+      const s = L.closed ? (ufPhase + k * sp) % L.len : (ufPhase + k * sp) % L.len;
+      let lo = 0, hi = L.n - 1; while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (L.cum[mid] < s) lo = mid; else hi = mid; }
+      const seg = L.cum[hi] - L.cum[lo] || 1, t = (s - L.cum[lo]) / seg;
+      for (let c = 0; c < 3; c++) ufDotPos[w++] = L.arr[3 * lo + c] + t * (L.arr[3 * hi + c] - L.arr[3 * lo + c]);
+    }
+  }
+  ufDotGeo.attributes.position.needsUpdate = true; ufDotGeo.setDrawRange(0, w / 3); ufDotGeo.computeBoundingSphere();
 }
 function hideGpuDomains() { if (gdom && gdom.canvas) gdom.canvas.style.display = 'none'; }
 function visible(x, y, z) {
@@ -1117,7 +1208,7 @@ function applyTheme() {
   mR.setClearColor(new THREE.Color(cssColor('--scene') || '#dfe5e9'));
   uR.setClearColor(new THREE.Color(cssColor('--scene') || '#dfe5e9'));
   const ink = new THREE.Color(cssColor('--ink') || '#1d2630');
-  lineInk.copy(ink); dotMat.color.copy(ink); lineHot.set(ink.getHSL({}).l > 0.5 ? 0xf08a4b : 0xc2541b); if (lines.length) drawLines();
+  lineInk.copy(ink); ufMat.color.copy(ink); dotMat.color.copy(ink); lineHot.set(ink.getHSL({}).l > 0.5 ? 0xf08a4b : 0xc2541b); if (lines.length) drawLines();
   mArrow.setColor(ink);
   const dark = ink.getHSL({}).l > 0.5;
   lineMat.opacity = dark ? 0.55 : 0.5;
@@ -1157,8 +1248,11 @@ function loop(now) {
       neelText(mat, edge, a) + warnText(mat) + (viewMode === 'domains' ? domStatsHTML : '');
   }
   updateDots(dt);
+  if ($('uflowChk').checked && microActive() && microFrame && microFrame !== ufFrame && performance.now() - ufLast > (NGRID >= 64 ? 450 : 200)) { ufFrame = microFrame; ufLast = performance.now(); traceFlow(microFrame.m); }
+  updateFlowDots(dt);
   mCtl.update(); uCtl.update();
-  if (gpuDomActive() && renderGpuDomains()) domGroup.visible = false; else { hideGpuDomains(); domGroup.visible = viewMode === 'domains'; }
+  const gdOn = gpuDomActive() && renderGpuDomains(); uR.setClearAlpha(gdOn ? 0 : 1);
+  if (gdOn) domGroup.visible = false; else { hideGpuDomains(); domGroup.visible = viewMode === 'domains'; }
   mR.render(mScene, mCam); uR.render(uScene, uCam);
   requestAnimationFrame(loop);
 }
