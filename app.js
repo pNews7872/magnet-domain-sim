@@ -522,7 +522,7 @@ function makeGpuEngine(device, post) {
   async function handle(d) {
     if (d.type === 'config') {
       let fresh = false;
-      if (!sim || sim.N !== d.N) { if (sim) sim.destroy(); sim = await GpuMicro.create(d.N, device); fresh = true; defKey = ''; }
+      if (!sim || sim.N !== d.N) { const old = sim; sim = null; if (old) old.destroy(); sim = await GpuMicro.create(d.N, device); fresh = true; defKey = ''; } // 새 격자를 만드는 동안 지운 버퍼를 그리지 않도록
       sim.alpha = d.alpha; sim.T = d.T; sim.stressK = d.stressK; sim.stressAxis = d.stressAxis;
       const k = JSON.stringify(d.defects); if (k !== defKey) { defKey = k; sim.mat = null; sim.setDefects(d.defects ? buildDefects(d.N, d.defects) : null); }
       sim.setMaterial(d.mat, d.edge); if (d.h) sim.setField(d.h);
