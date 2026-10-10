@@ -968,7 +968,10 @@ function visible(x, y, z) {
   const L = NGRID - 1;
   if (viewMode === 'all') return true;
   if (viewMode === 'domains') return false; // 자구 보기에서는 화살표 대신 자구 덩어리를 그림
-  if (viewMode === 'surface') return x === 0 || y === 0 || z === 0 || x === L || y === L || z === L;
+  if (viewMode === 'surface') { // 겉면: 입자 모양의 바깥(상자 밖이거나 모양 밖 칸)과 맞닿은 칸
+    const N = NGRID, out = (a, b, c) => a < 0 || b < 0 || c < 0 || a > L || b > L || c > L || defectKind[a + N * (b + N * c)] === 4;
+    return out(x - 1, y, z) || out(x + 1, y, z) || out(x, y - 1, z) || out(x, y + 1, z) || out(x, y, z - 1) || out(x, y, z + 1);
+  }
   const a = $('sliceAxis').value, k = +$('sliceSl').value;
   return (a === 'x' ? x : a === 'y' ? y : z) === k;
 }
