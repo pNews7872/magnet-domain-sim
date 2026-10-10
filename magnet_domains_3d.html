@@ -1664,13 +1664,17 @@ function makeGpuEngine(device, post) {
     else if (d.type === 'run') { running = d.on; }
   }
   (async function loop() {
+    let lastPost = 0;
     while (alive) {
       await new Promise(r => setTimeout(r, 0)); await chain;
       if (!sim || !sim.mat || !running || !active) { await new Promise(r => setTimeout(r, 50)); continue; }
-      const t0 = performance.now(); sim.step(batch); const m = await sim.readM(); const dt = performance.now() - t0;
-      batch = Math.max(1, Math.min(400, Math.round(batch * 30 / Math.max(dt, 1))));
-      if (!(sim.T > 0) && sim.lastTorque < 3e-4) active = false;
-      post({ type: 'frame', m: new Float32Array(m), tns: sim.t * sim.timeUnit * 1e9, torque: sim.lastTorque, stable: !active, thermal: sim.T > 0, avg: sim.average(), gpu: true });
+      const t0 = performance.now(); sim.step(batch); await device.queue.onSubmittedWorkDone(); const gdt = performance.now() - t0;
+      batch = Math.max(1, Math.min(2000, Math.round(batch * 20 / Math.max(gdt, 0.5)))); // GPU 시간만으로 한 묶음 크기 조절
+      if (performance.now() - lastPost > (sim.N >= 64 ? 150 : 60)) { // 화면 갱신은 따로, 너무 자주 읽어오지 않게
+        lastPost = performance.now(); const m = await sim.readM();
+        if (!(sim.T > 0) && sim.lastTorque < 3e-4) active = false;
+        post({ type: 'frame', m: new Float32Array(m), tns: sim.t * sim.timeUnit * 1e9, torque: sim.lastTorque, stable: !active, thermal: sim.T > 0, avg: sim.average(), gpu: true });
+      }
     }
   })();
   return { msg(d) { chain = chain.then(() => handle(d)).catch(e => { gpuNote = 'GPU 오류로 CPU로 전환: ' + e.message; fallbackToCPU(); }); }, tick: () => false, stop() { alive = false; if (sim) sim.destroy(); } };
@@ -1791,13 +1795,23 @@ function visible(x, y, z) {
   const a = $('sliceAxis').value, k = +$('sliceSl').value;
   return (a === 'x' ? x : a === 'y' ? y : z) === k;
 }
+let visIds = null, visDirty = true;
+function markVis() { visDirty = true; }
 function drawMicro(m) {
   const o = (NGRID - 1) / 2;
-  for (let z = 0, id = 0; z < NGRID; z++) for (let y = 0; y < NGRID; y++) for (let x = 0; x < NGRID; x++, id++) {
+  if (visDirty || !visIds) { // 보이는 칸 목록을 다시 만들고, 나머지는 한 번만 숨김
+    visIds = []; const z0 = new THREE.Matrix4().makeScale(0, 0, 0);
+    for (let z = 0, id = 0; z < NGRID; z++) for (let y = 0; y < NGRID; y++) for (let x = 0; x < NGRID; x++, id++) {
+      if (visible(x, y, z) && defectKind[id] !== 1) visIds.push(id); else cones.setMatrixAt(id, z0);
+    }
+    visDirty = false;
+  }
+  for (let k = 0; k < visIds.length; k++) {
+    const id = visIds[k], x = id % NGRID, y = ((id / NGRID) | 0) % NGRID, z = (id / (NGRID * NGRID)) | 0;
     const i = 3 * id, mx = m[i], my = m[i + 1], mz = m[i + 2];
     tmpP.set((x - o) * SP, (y - o) * SP, (z - o) * SP);
     dirV.set(mx, my, mz); tmpQ.setFromUnitVectors(up, dirV);
-    tmpM.compose(tmpP, tmpQ, visible(x, y, z) && defectKind[id] !== 1 ? tmpS : zeroS);
+    tmpM.compose(tmpP, tmpQ, tmpS);
     cones.setMatrixAt(id, tmpM);
     let hue = Math.atan2(mz, mx) / (2 * Math.PI); if (hue < 0) hue += 1;
     col.setHSL(hue, 0.72, 0.42 + 0.3 * my);
@@ -1814,7 +1828,7 @@ function setGrid(n) {
   const c0 = new THREE.Color(0x888888), z0 = new THREE.Matrix4().makeScale(0, 0, 0);
   for (let i = 0; i < N3; i++) { cones.setColorAt(i, c0); cones.setMatrixAt(i, z0); marks.setColorAt(i, c0); marks.setMatrixAt(i, z0); }
   uScene.add(cones); uScene.add(marks);
-  defectKind = new Uint8Array(N3); microFrame = null; lastDrawnFrame = null;
+  defectKind = new Uint8Array(N3); microFrame = null; lastDrawnFrame = null; markVis();
   $('sliceSl').max = n - 1; $('sliceSl').value = Math.floor(n / 2);
   $('microReadout').innerHTML = `${n}³ 격자 준비 중 (반자장 계수 계산)`;
   setupMaterial('vortex');
@@ -1836,7 +1850,7 @@ function sendConfig(state) {
   if (eff.m < 0.02) return;
   const sigma = $('dStress').checked ? 4e8 * +$('defAmt').value : 0; // Pa, x방향 인장
   const cfg = defectCfg();
-  defectKind = cfg ? buildDefects(NGRID, cfg).kind : new Uint8Array(N3);
+  defectKind = cfg ? buildDefects(NGRID, cfg).kind : new Uint8Array(N3); markVis();
   // 열 요동 보정: 칸 크기 아래 요동은 이미 측정값 Ms(T)에 들어 있으므로, 계산에 넣는 Ms를 f(x)로 나눠 겹침을 상쇄
   const cell = +$('edgeSl').value * 1e-9 / NGRID, xT = 1.380649e-23 * tempK / (eff.A * cell);
   thermFix = $('thermFix').checked && tempK > 0 ? Math.min(1 / thermalF(xT), mRed(m, 0) / Math.max(eff.m, 1e-3)) : 1; // Ms(0)을 넘지 않게
@@ -1999,10 +2013,10 @@ $('alphaSl').addEventListener('input', (e) => { $('alphaVal').textContent = (+e.
 document.querySelectorAll('[data-init]').forEach(b => b.addEventListener('click', () => engine.msg({ type: 'reset', state: b.dataset.init })));
 $('pauseBtn').addEventListener('click', (e) => { const p = e.target.getAttribute('aria-pressed') !== 'true'; e.target.setAttribute('aria-pressed', p ? 'true' : 'false'); e.target.textContent = p ? '계속' : '일시정지'; engine.msg({ type: 'run', on: !p }); });
 document.querySelectorAll('[data-vm]').forEach(b => b.addEventListener('click', () => {
-  viewMode = b.dataset.vm; document.querySelectorAll('[data-vm]').forEach(x => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
+  viewMode = b.dataset.vm; markVis(); document.querySelectorAll('[data-vm]').forEach(x => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
   if (microFrame) drawMicro(microFrame.m); drawMarks();
 }));
-['sliceAxis', 'sliceSl'].forEach(id => $(id).addEventListener('input', () => { if (viewMode !== 'slice') document.querySelector('[data-vm="slice"]').click(); else { if (microFrame) drawMicro(microFrame.m); drawMarks(); } }));
+['sliceAxis', 'sliceSl'].forEach(id => $(id).addEventListener('input', () => { markVis(); if (viewMode !== 'slice') document.querySelector('[data-vm="slice"]').click(); else { if (microFrame) drawMicro(microFrame.m); drawMarks(); } }));
 
 // 테마 색
 function applyTheme() {
