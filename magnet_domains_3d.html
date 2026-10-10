@@ -1873,7 +1873,7 @@ function setupMaterial(resetState) {
   cubeMat.opacity = matKey === 'Mt' ? 0.45 : 0.32;
   if (m.kind === 'ferro') {
     const lim = edgeLimits(), sl = $('edgeSl');
-    sl.min = lim.min; sl.max = lim.max; sl.value = Math.min(m.def, lim.max);
+    sl.min = lim.min; sl.max = lim.max; sl.value = Math.min(Math.round(m.def * NGRID / 16), lim.max); // 격자가 촘촘해지면 같은 칸 크기를 유지하도록 입자를 키움
     $('edgeVal').textContent = sl.value + ' nm';
   }
   updateOverlay();
@@ -1942,6 +1942,13 @@ function updateArrowsAndReadout(d) {
   if (!microActive()) updateMicroOverlayText();
 }
 // 단일 자구 입자가 열로 뒤집히는 데 걸리는 시간 (Néel–Arrhenius, 균일 회전 가정)
+let rateHist = [];
+function fmtT(ns) { return ns < 1 ? (ns * 1000).toFixed(1) + ' ps' : ns.toFixed(2) + ' ns'; }
+function rateText(ns) { // 실제 1초 동안 계산되는 물리 시간
+  const now = performance.now(); rateHist.push([now, ns]); while (rateHist.length > 2 && now - rateHist[0][0] > 3000) rateHist.shift();
+  if (rateHist.length < 2 || rateHist[0][1] > ns) { if (rateHist.length && rateHist[0][1] > ns) rateHist = [[now, ns]]; return ''; }
+  const r = (ns - rateHist[0][1]) / ((now - rateHist[0][0]) / 1000); return r > 0 ? ` (1초에 ${fmtT(r)})` : '';
+}
 function neelText(mat, edge, a) {
   if (Math.hypot(a[0], a[1], a[2]) < 0.85 || tempK <= 0) return '';
   const eff = matAtT(mat, tempK), V = Math.pow(edge * 1e-9, 3), kT = 1.380649e-23 * tempK;
@@ -2057,7 +2064,7 @@ function loop(now) {
       `${mat.name} 나노 정육면체, 한 변 <b>${edge} nm</b> (한 칸 ${(edge / NGRID).toFixed(2)} nm, ${NGRID}³ 칸, ${microFrame.gpu ? 'GPU' : 'CPU'}${thermFix > 1.0005 ? `, 열 보정 Ms ×${thermFix.toFixed(3)}` : ''})<br>` +
       `받는 자기장: <b>${(hB * 1000).toFixed(hB < 0.001 ? 2 : 0)} mT</b> (주황 화살표)<br>` +
       `평균 자화 방향 ⟨m⟩ = (${a.map(v => v.toFixed(2)).join(', ')})<br>` +
-      `계산된 시간 ${microFrame.tns.toFixed(2)} ns, ${microFrame.thermal ? `<b>${Math.round(tempK)} K 열 요동 중</b>` : microFrame.stable ? '<b>안정 상태</b>' : '자리 잡는 중'}` +
+      `계산된 시간 ${fmtT(microFrame.tns)}${rateText(microFrame.tns)}, ${microFrame.thermal ? `<b>${Math.round(tempK)} K 열 요동 중</b>` : microFrame.stable ? '<b>안정 상태</b>' : '자리 잡는 중'}` +
       neelText(mat, edge, a) + warnText(mat);
   }
   updateDots(dt);
