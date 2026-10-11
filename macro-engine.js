@@ -23,7 +23,7 @@ function equalFluxSeeds(Bf, R, c, n, hy, hz) {
 // ===== 거시 엔진: 자석 자기장, 블록 해석, 힘, 자기력선 =====
 function makeMacroEngine(post) {
   const n = 8, TH = 2.5, MAG_HALF = [0.5, 1, 1]; let BR = 1.3; // 자석 종류에 따라 바뀜 (frame.Br)
-  const S = new MacroSolver(n, TH); S.maxNewton = 20; S.cgIters = 10; S.maxSub = 40; // 큰 자기장 변화는 잘게 나눠 이력 경로를 따라감 (4로 묶으면 포화 뒤 큰 점프에서 잔류 자화가 크게 틀어짐)
+  const S = new MacroSolver(n, TH); S.maxNewton = 20; S.cgIters = 10; S.maxSub = 3; // 큰 자기장 변화는 몇 단계로 나눠 이력 경로를 따라감 (각 단계는 미분 자화율 뉴턴법으로 끝까지 수렴)
   const h = S.h, n3 = S.n3;
   let mat = null, frame = null, J = new Float64Array(3 * n3), HdC = new Float64Array(3 * n3), linear = false, chiLin = 0;
   function Btool(x, y, z, out) {

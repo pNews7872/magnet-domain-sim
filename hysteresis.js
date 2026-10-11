@@ -119,9 +119,10 @@ class MacroSolver {
       const dH = new Float64Array(N3), R = new Float64Array(N3), dMj = new Float64Array(N3), dMs = new Float64Array(N3), trial = new Float64Array(9 * n3);
       const dHt = new Float64Array(N3), trialT = new Float64Array(9 * n3), dMt = new Float64Array(N3);
       let rmax0 = 0; for (let i = 0; i < N3; i++) rmax0 = Math.max(rmax0, Math.abs(rhs[i]));
+      const sub = new Float64Array(9);
       const evalR = (dHx, trialOut, dMout, Rout) => {
         for (let i = 0; i < n3; i++) {
-          const sub = st0.slice(9 * i, 9 * i + 9);
+          sub.set(st0.subarray(9 * i, 9 * i + 9));
           const H0 = [this.H[3 * i], this.H[3 * i + 1], this.H[3 * i + 2]], H1 = [H0[0] + dHx[3 * i], H0[1] + dHx[3 * i + 1], H0[2] + dHx[3 * i + 2]];
           if (p.linear) { sub[3] = p.chi * H1[0]; sub[4] = p.chi * H1[1]; sub[5] = p.chi * H1[2]; }
           else jaStep(sub, H0, H1, p, 3);
@@ -133,26 +134,35 @@ class MacroSolver {
         return Math.sqrt(r);
       };
       let rn = evalR(dH, trial, dMj, R);
-      const tol = 1e-4 * Math.sqrt(N3) * rmax0 + 1;
+      const tol = 1e-3 * Math.sqrt(N3) * rmax0 + 1; // 남은 어긋남이 처음의 0.1% 아래면 수렴
       const dmax = p.linear ? 1e12 : 0.6 * Math.max(p.a, p.k, 20);
-      for (let it = 0; it < (this.maxNewton || 30) && rn > tol; it++) {
+      let dcur = Math.max(dmax, this.dcur || 0); // 신뢰 구간(이전 크기에서 시작): 크게 움직여도 잘 되면 넓히고, 안 되면 좁힘 (포화에서 크게 돌아올 때 멈추지 않도록)
+      for (let it = 0; it < (this.maxNewton || 30) * 10 && rn > tol; it++) {
+        // 블록마다 실제 미분 자화율(dM/dH)을 현재 위치에서 직접 구함 (할선 추정보다 정확해서 반복이 크게 줄어듦)
         for (let i = 0; i < n3; i++) {
-          const h2 = dH[3 * i] ** 2 + dH[3 * i + 1] ** 2 + dH[3 * i + 2] ** 2;
-          if (h2 > 1e-6) this.chi[i] = Math.max(1, Math.min(1e7, (dMj[3 * i] * dH[3 * i] + dMj[3 * i + 1] * dH[3 * i + 1] + dMj[3 * i + 2] * dH[3 * i + 2]) / h2));
+          let ux = -R[3 * i], uy = -R[3 * i + 1], uz = -R[3 * i + 2], un = Math.hypot(ux, uy, uz);
+          if (un < 1e-12) { ux = rhs[3 * i]; uy = rhs[3 * i + 1]; uz = rhs[3 * i + 2]; un = Math.hypot(ux, uy, uz); }
+          if (un < 1e-12) continue; ux /= un; uy /= un; uz /= un;
+          const H0 = [this.H[3 * i], this.H[3 * i + 1], this.H[3 * i + 2]], dh = Math.hypot(dH[3 * i], dH[3 * i + 1], dH[3 * i + 2]), eps = Math.max(0.05 * p.k, 1e-3 * dh, 1);
+          const H1 = [H0[0] + dH[3 * i] + eps * ux, H0[1] + dH[3 * i + 1] + eps * uy, H0[2] + dH[3 * i + 2] + eps * uz];
+          sub.set(st0.subarray(9 * i, 9 * i + 9)); jaStep(sub, H0, H1, p, 3);
+          const dm = ((sub[3] - M0[3 * i] - dMj[3 * i]) * ux + (sub[4] - M0[3 * i + 1] - dMj[3 * i + 1]) * uy + (sub[5] - M0[3 * i + 2] - dMj[3 * i + 2]) * uz) / eps;
+          this.chi[i] = Math.max(1e-3, Math.min(1e7, dm));
         }
         for (let i = 0; i < N3; i++) R[i] = -R[i];
         dMs.fill(0); this.cg(R, dMs, this.cgIters || 20);
         let lam = 1, ok = false, smax = 0;
         for (let i = 0; i < N3; i++) smax = Math.max(smax, Math.abs(dMs[i] / this.chi[(i / 3) | 0]));
-        if (smax > dmax) lam = dmax / smax;
+        if (smax > dcur) lam = dcur / smax;
         for (let ls = 0; ls < 14; ls++) {
           for (let i = 0; i < N3; i++) dHt[i] = dH[i] + lam * dMs[i] / this.chi[(i / 3) | 0];
           const rt = evalR(dHt, trialT, dMt, R);
-          if (rt < rn) { rn = rt; dH.set(dHt); trial.set(trialT); dMj.set(dMt); ok = true; break; }
+          if (rt < rn) { rn = rt; dH.set(dHt); trial.set(trialT); dMj.set(dMt); ok = true; if (ls === 0 && smax > dcur) dcur = Math.min(1e7, dcur * 2); else if (ls > 1) dcur = Math.max(dmax, dcur / 2); break; }
           lam *= 0.5;
         }
         if (!ok) { evalR(dH, trial, dMj, R); break; }
       }
+      this.dcur = dcur;
       this.st.set(trial);
       for (let i = 0; i < N3; i++) this.H[i] += dH[i];
     }

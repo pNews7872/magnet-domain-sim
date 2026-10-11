@@ -376,7 +376,7 @@ function drawLines() {
 }
 function onMacroMsg(d) {
   if (d.type !== 'result') return;
-  if (typeof d.id === 'string' && d.id.startsWith('sw')) { if (sweepMacroWait) { const f = sweepMacroWait; sweepMacroWait = null; f(d); } return; } // 이력 곡선 측정 결과는 따로 처리
+  if (typeof d.id === 'string' && d.id.startsWith('sw')) { if (sweepMacroWait && sweepMacroWait.id === d.id) { const f = sweepMacroWait.res; sweepMacroWait = null; f(d); } return; } // 이력 곡선 측정 결과는 따로 처리 (다시 요청한 같은 점의 늦은 응답이 다음 점으로 잘못 들어가지 않도록 번호를 맞춤)
   macroBusy = false; macroRes = d;
   pvGrid = d.grid; pvSup = d.sup; pvAny = d.anyJ; pvAvg = d.avg;
   const fresh = d.id === sentVersion && sentVersion === posVersion;
@@ -1312,10 +1312,12 @@ async function runSweep() {
   sweep = { stop: false }; loopData.macro = []; loopData.micro = []; loopData.hmax = Hmax * MU0 * 1000;
   $('loopBtn').textContent = '측정 멈추기'; $('loopBtn').setAttribute('aria-pressed', 'true');
   try {
+    let lastH = 0;
+    let swSeq = 0;
+    const swSend = (tag, Hu) => { const id = 'sw' + tag + '_' + (++swSeq), msg = { type: 'update', id, frame: { R: MF.R, c: [0, 0, -1e4], Br: BR }, lines: false, Hu }; return new Promise(res => { const w = { id, res }; sweepMacroWait = w; macroEngine.msg(msg); const again = setInterval(() => { if (sweepMacroWait === w) macroEngine.msg(msg); else clearInterval(again); }, 30000); }); }; // 30초 넘게 답이 없을 때만 다시 요청
     for (let k = 0; k < path.length && !sweep.stop; k++) {
       const Hu = [0, 0, 0]; Hu[ax] = path[k];
-      const swMsg = { type: 'update', id: 'sw' + k, frame: { R: MF.R, c: [0, 0, -1e4], Br: BR }, lines: false, Hu };
-      const macroP = new Promise(res => { sweepMacroWait = res; macroEngine.msg(swMsg); const again = setInterval(() => { if (sweepMacroWait === res) macroEngine.msg(swMsg); else clearInterval(again); }, 8000); }); // 응답이 없으면 다시 요청
+      const macroP = swSend('p' + k, Hu);
       let microVal = null;
       if (microActive()) {
         const MsN = matAtT(mat, tempK).Ms * thermFix; engine.msg({ type: 'field', h: Hu.map(v => v / MsN) });
@@ -1326,9 +1328,15 @@ async function runSweep() {
         if (microFrame) microVal = microFrame.avg[ax];
       }
       const d = await macroP; macroRes = d; targetM = d.avg; forceN = d.F; applyMacroResult(d, false); allLines = []; drawLines();
-      const hm = path[k] * MU0 * 1000;
+      const hm = path[k] * MU0 * 1000; lastH = path[k];
       loopData.macro.push([hm, d.avg[ax] / MsMacro]); if (microVal !== null) loopData.micro.push([hm, microVal]);
       $('loopStatus').textContent = `측정 중 ${k + 1}/${path.length}, μ₀H = ${hm.toFixed(0)} mT`; drawLoop();
+    }
+    // 실제 실험처럼 코일 자기장을 0까지 천천히 내린 뒤 끝냄 (한 번에 끊으면 정육면체가 이력 경로를 벗어남)
+    if (Math.abs(lastH) > 0) {
+      const steps = Math.max(4, Math.ceil(nHalf * Math.abs(lastH) / Hmax));
+      for (let i = steps - 1; i >= 0; i--) { $('loopStatus').textContent = `코일 자기장을 0으로 천천히 내리는 중 ${steps - i}/${steps}`; const Hu = [0, 0, 0]; Hu[ax] = lastH * i / steps; const d = await swSend('r' + i, Hu); macroRes = d; targetM = d.avg; forceN = d.F; applyMacroResult(d, false); allLines = []; drawLines(); }
+      if (microActive()) engine.msg({ type: 'field', h: [0, 0, 0] });
     }
     const m = loopData.macro, rem = m.length > 2 * nHalf ? m[2 * nHalf][1] : 0;
     $('loopStatus').textContent = sweep.stop ? '측정을 멈췄어요.' : `측정 끝. 자기장 0에서 남은 자화(잔류): 정육면체 ${(100 * Math.abs(rem)).toFixed(1)}%` + (loopData.micro.length > 2 * nHalf ? `, 나노 입자 ${(100 * Math.abs(loopData.micro[2 * nHalf][1])).toFixed(0)}%` : '');
