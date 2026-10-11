@@ -1258,7 +1258,7 @@ $('alphaSl').addEventListener('input', (e) => { $('alphaVal').textContent = (+e.
 document.querySelectorAll('[data-init]').forEach(b => b.addEventListener('click', () => engine.msg({ type: 'reset', state: b.dataset.init })));
 $('pauseBtn').addEventListener('click', (e) => { const p = e.target.getAttribute('aria-pressed') !== 'true'; e.target.setAttribute('aria-pressed', p ? 'true' : 'false'); e.target.textContent = p ? '계속' : '일시정지'; engine.msg({ type: 'run', on: !p }); });
 document.querySelectorAll('[data-vm]').forEach(b => b.addEventListener('click', () => {
-  viewMode = b.dataset.vm; markVis(); domLastBuild = 0; domGroup.visible = viewMode === 'domains'; if (viewMode === 'domains' && microFrame) buildDomains(microFrame.m); document.querySelectorAll('[data-vm]').forEach(x => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
+  viewMode = b.dataset.vm; markVis(); b.closest('.controls').classList.toggle('slice-on', viewMode === 'slice'); domLastBuild = 0; domGroup.visible = viewMode === 'domains'; if (viewMode === 'domains' && microFrame) buildDomains(microFrame.m); document.querySelectorAll('[data-vm]').forEach(x => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
   if (microFrame) drawMicro(microFrame.m); drawMarks();
 }));
 ['sliceAxis', 'sliceSl'].forEach(id => $(id).addEventListener('input', () => { markVis(); if (viewMode !== 'slice') document.querySelector('[data-vm="slice"]').click(); else { if (microFrame) drawMicro(microFrame.m); drawMarks(); } }));
@@ -1274,6 +1274,13 @@ function drawLoop() {
   if (loopCv.width !== Math.round(W * dpr)) { loopCv.width = Math.round(W * dpr); loopCv.height = Math.round(H * dpr); }
   const g = loopCv.getContext('2d'), C = loopColors(); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
   const L = 52, R = 14, T = 14, B = 40, pw = W - L - R, ph = H - T - B, hm = loopData.hmax;
+  if (!loopData.macro.length && !loopData.micro.length) { // 아직 측정 전: 빈 그래프 대신 안내만
+    g.strokeStyle = C.rule; g.lineWidth = 1; g.strokeRect(L + 0.5, T + 0.5, pw, ph);
+    g.beginPath(); g.moveTo(L + pw / 2, T); g.lineTo(L + pw / 2, T + ph); g.moveTo(L, T + ph / 2); g.lineTo(L + pw, T + ph / 2); g.stroke();
+    g.fillStyle = C.muted; g.font = '14px "IBM Plex Sans KR", sans-serif'; g.textAlign = 'center';
+    g.fillText('측정을 시작하면 가로축에 걸어 준 자기장, 세로축에 자화(M/Ms)를 그려요', L + pw / 2, T + ph / 2 - 12);
+    return;
+  }
   const X = (h) => L + (h / hm + 1) / 2 * pw, Y = (m) => T + (1 - (m + 1) / 2) * ph;
   g.font = '12px "IBM Plex Sans KR", sans-serif'; g.lineWidth = 1;
   g.strokeStyle = C.rule; g.fillStyle = C.muted; g.textAlign = 'center';
@@ -1439,7 +1446,7 @@ function loop(now) {
       `받는 자기장: <b>${(hB * 1000).toFixed(hB < 0.001 ? 2 : 0)} mT</b> (주황 화살표)<br>` +
       `평균 자화 방향 ⟨m⟩ = (${a.map(v => v.toFixed(2)).join(', ')})<br>` +
       `계산된 시간 ${fmtT(microFrame.tns)}${rateText(microFrame.tns)}, ${microFrame.thermal ? `<b>${Math.round(tempK)} K 열 요동 중</b>` : microFrame.stable ? '<b>안정 상태</b>' : '자리 잡는 중'}` +
-      neelText(mat, edge, a) + warnText(mat) + energyHTML(lastEnergy) + (viewMode === 'domains' ? domStatsHTML : '');
+      neelText(mat, edge, a) + warnText(mat) + ($('energyChk').checked ? energyHTML(lastEnergy) : '') + (viewMode === 'domains' ? domStatsHTML : '');
   }
   updateDots(dt);
   if ($('uflowChk').checked && microActive() && microFrame && microFrame !== ufFrame && performance.now() - ufLast > (NGRID >= 64 ? 450 : 200)) { ufFrame = microFrame; ufLast = performance.now(); traceFlow(microFrame.m); }

@@ -11,38 +11,41 @@
 </head>
 <body>
 <header>
-  <h1>자석을 가까이 대면 자구는 어떻게 변할까</h1>
-  <p><span class="lr">왼쪽</span><span class="tb">위쪽</span> 화면에서 네오디뮴 자석(<span class="mag-n">N극 빨강</span>, <span class="mag-s">S극 파랑</span>)을 끌어 옮겨 보세요. <span class="lr">오른쪽</span><span class="tb">아래쪽</span> 나노 정육면체가 탐침 위치의 자기장을 받아 실시간으로 반응해요.</p>
-  <div class="row" style="margin-top:10px;gap:8px 10px;flex-wrap:wrap;display:flex;align-items:center;">
-    <select id="sceneSel" aria-label="실험 장면 불러오기">
-      <option value="">실험 장면 불러오기</option>
-      <option value="contact">철에 자석 붙이기</option>
-      <option value="steel">강철에 남는 자성</option>
-      <option value="landau">퍼멀로이 판의 폐쇄 자구</option>
-      <option value="curie">니켈의 퀴리 온도 넘기</option>
-      <option value="spm">열로 흔들리는 작은 입자 (초상자성)</option>
-      <option value="eddy">구리의 맴돌이 전류</option>
-      <option value="loop">강철의 이력 곡선</option>
-    </select>
-    <span id="sceneNote" class="small" style="max-width:70ch"></span>
+  <div class="hrow">
+    <div class="htext">
+      <h1>자석을 가까이 대면 자구는 어떻게 변할까</h1>
+      <p><span class="lr">왼쪽</span><span class="tb">위쪽</span>에서 자석을 끌어 옮기면, <span class="lr">오른쪽</span><span class="tb">아래쪽</span> 나노 입자가 그 자리의 자기장에 반응해요.</p>
+    </div>
+    <div class="scene">
+      <select id="sceneSel" aria-label="실험 장면 불러오기">
+        <option value="">실험 장면 불러오기</option>
+        <option value="contact">철에 자석 붙이기</option>
+        <option value="steel">강철에 남는 자성</option>
+        <option value="landau">퍼멀로이 판의 폐쇄 자구</option>
+        <option value="curie">니켈의 퀴리 온도 넘기</option>
+        <option value="spm">열로 흔들리는 작은 입자 (초상자성)</option>
+        <option value="eddy">구리의 맴돌이 전류</option>
+        <option value="loop">강철의 이력 곡선</option>
+      </select>
+    </div>
   </div>
+  <p id="sceneNote" class="scene-note"></p>
 </header>
 
 <main>
   <section class="panel" aria-labelledby="macroTitle">
     <div class="phead">
-      <h2 id="macroTitle">눈에 보이는 크기 (cm)</h2>
-      <span class="tag exact">자석의 자기장: 정확한 계산</span>
-      <span class="tag exact">정육면체의 반응: 블록 정자기 계산 + 측정 기반 이력 모형</span>
+      <h2 id="macroTitle">5 cm 정육면체와 자석</h2>
+      <span class="unit">cm</span>
     </div>
     <div class="view" id="macroView">
       <div class="readout" id="macroReadout">계산 준비 중</div>
-      <div class="hint"><span class="mouse">자석을 끌면 이동, 빈 곳을 끌면 시점 회전</span><span class="touch" id="macroHintTouch">한 손가락: 스크롤 · 두 손가락: 회전과 확대 · 자석 길게 누르기: 잡아서 옮기기</span></div>
-      <div class="busy" id="macroBusy" hidden>정밀 계산 중, 지금은 미리보기</div>
+      <div class="hint"><span class="mouse">자석을 끌면 이동, 빈 곳을 끌면 회전</span><span class="touch" id="macroHintTouch">한 손가락: 스크롤 · 두 손가락: 회전과 확대 · 자석 길게 누르기: 옮기기</span></div>
+      <div class="busy" id="macroBusy" hidden>정밀 계산 중</div>
     </div>
     <div class="info" id="macroInfo" aria-live="polite"></div>
     <div class="controls">
-      <div class="row"><span class="lbl">정육면체</span>
+      <div class="row main"><span class="lbl">재료</span>
         <select id="matSel" aria-label="정육면체 재료">
           <optgroup label="강자성 (자구가 생김)">
             <option value="Fe">철 (Fe, 순도 99.8% 풀림)</option>
@@ -63,47 +66,57 @@
             <option value="Bi">비스무트 (Bi)</option>
           </optgroup>
         </select>
-        <span class="small">한 변 5 cm</span>
+        <button id="demagBtn" class="quiet">자화 이력 지우기</button>
       </div>
-      <div class="row"><span class="lbl">정육면체 온도</span>
+      <div class="row main"><span class="lbl">온도</span>
         <input type="range" id="tempSl" min="0" max="1500" step="5" value="300" aria-label="정육면체 온도">
         <span class="val" id="tempVal">300 K (27 °C)</span>
-        <button data-temp="0">0 K</button>
-        <button data-temp="300">상온</button>
+        <span class="seg"><button data-temp="0">0 K</button><button data-temp="300">상온</button></span>
       </div>
-      <div class="row"><span class="lbl">자석 종류</span>
-        <select id="magnetSel" aria-label="자석 종류">
-          <option value="ndfeb">네오디뮴 N42 (1.30 T)</option>
-          <option value="smco">사마륨-코발트 (1.05 T)</option>
-          <option value="alnico">알니코 5 (1.25 T)</option>
-          <option value="ferrite">페라이트, 냉장고 자석 (0.40 T)</option>
-        </select>
-      </div>
-      <div class="row"><span class="lbl">자석</span>
-        <button id="rotBtn">45° 돌리기</button>
-        <button id="flipBtn">N극과 S극 뒤집기</button>
-        <button id="tiltBtn" aria-pressed="false">세우기</button>
-        <button id="homeBtn">처음 위치로</button>
-        <button id="awayBtn" aria-pressed="false">자석 치우기</button>
-        <button id="demagBtn">정육면체 자화 이력 지우기</button>
-      </div>
-      <div class="row"><span class="lbl">자석 높이</span>
-        <input type="range" id="heightSl" min="-5" max="5" step="0.1" value="0" aria-label="자석 높이">
-        <span class="val" id="heightVal">0.0 cm</span>
-      </div>
-      <div class="row"><span class="lbl">표시</span>
-        <label class="chk"><input type="checkbox" id="linesChk" checked> 자기력선</label>
-        <label class="chk"><input type="checkbox" id="flowChk" checked> 방향 흐름 점</label>
-        <label class="chk"><input type="checkbox" id="arrowChk" checked> 평균 자화와 힘 화살표</label>
-        <label class="chk"><input type="checkbox" id="blockChk" checked> 정육면체 속 자화 분포</label>
-      </div>
+      <details class="grp" open>
+        <summary>자석</summary>
+        <div class="grp-body">
+          <div class="row"><span class="lbl">종류</span>
+            <select id="magnetSel" aria-label="자석 종류">
+              <option value="ndfeb">네오디뮴 N42 (1.30 T)</option>
+              <option value="smco">사마륨-코발트 (1.05 T)</option>
+              <option value="alnico">알니코 5 (1.25 T)</option>
+              <option value="ferrite">페라이트, 냉장고 자석 (0.40 T)</option>
+            </select>
+          </div>
+          <div class="row"><span class="lbl">방향</span>
+            <button id="rotBtn">45° 돌리기</button>
+            <button id="flipBtn">극 뒤집기</button>
+            <button id="tiltBtn" aria-pressed="false">세우기</button>
+          </div>
+          <div class="row"><span class="lbl">위치</span>
+            <button id="homeBtn">처음 위치로</button>
+            <button id="awayBtn" aria-pressed="false">자석 치우기</button>
+          </div>
+          <div class="row"><span class="lbl">높이</span>
+            <input type="range" id="heightSl" min="-5" max="5" step="0.1" value="0" aria-label="자석 높이">
+            <span class="val" id="heightVal">0.0 cm</span>
+          </div>
+        </div>
+      </details>
+      <details class="grp">
+        <summary>화면에 보일 것</summary>
+        <div class="grp-body">
+          <div class="row checks">
+            <label class="chk"><input type="checkbox" id="linesChk" checked> 자기력선</label>
+            <label class="chk"><input type="checkbox" id="flowChk" checked> 흐르는 점</label>
+            <label class="chk"><input type="checkbox" id="arrowChk" checked> 평균 자화와 힘</label>
+            <label class="chk"><input type="checkbox" id="blockChk" checked> 정육면체 속 자화</label>
+          </div>
+        </div>
+      </details>
     </div>
   </section>
 
   <section class="panel" aria-labelledby="microTitle">
     <div class="phead">
-      <h2 id="microTitle">나노 입자 속 자구 (nm)</h2>
-      <span class="tag exact">LLG 마이크로마그네틱 계산</span>
+      <h2 id="microTitle">나노 입자 속 자구</h2>
+      <span class="unit">nm</span>
     </div>
     <div class="view" id="microView">
       <div class="readout" id="microReadout">계산 준비 중</div>
@@ -113,91 +126,115 @@
     </div>
     <div class="info" id="microInfo" aria-live="polite"></div>
     <div class="controls">
-      <div class="row"><span class="lbl">탐침 위치</span>
-        <select id="probeSel" aria-label="탐침 위치">
-          <option value="near">자석 쪽 면</option>
-          <option value="center">정육면체 중심</option>
-          <option value="far">반대쪽 면</option>
-        </select>
-        <span class="legend"><span class="wheel" aria-hidden="true"></span>색: 수평 방향, 밝을수록 위(+y)</span>
+      <div class="row main"><span class="lbl">보기</span>
+        <span class="seg"><button data-vm="surface" aria-pressed="true">겉면</button><button data-vm="all" aria-pressed="false">전체</button><button data-vm="slice" aria-pressed="false">단면</button><button data-vm="domains" aria-pressed="false">자구</button></span>
+        <span class="slice-only"><select id="sliceAxis" aria-label="단면 축"><option value="y">수평 (y)</option><option value="z">세로 (z)</option><option value="x">세로 (x)</option></select>
+        <input type="range" id="sliceSl" min="0" max="15" step="1" value="8" aria-label="단면 위치"></span>
       </div>
-      <div class="row"><span class="lbl">한 변 크기</span>
-        <input type="range" id="edgeSl" min="10" max="50" step="1" value="40" aria-label="나노 정육면체 한 변 크기">
+      <div class="row main"><span class="lbl">크기</span>
+        <input type="range" id="edgeSl" min="10" max="50" step="1" value="40" aria-label="나노 입자 크기">
         <span class="val" id="edgeVal">40 nm</span>
       </div>
-      <div class="row"><span class="lbl">처음 상태</span>
-        <button data-init="random">무작위</button>
-        <button data-init="uniform">한 방향</button>
-        <button data-init="vortex">소용돌이</button>
-        <button id="pauseBtn" aria-pressed="false">일시정지</button>
-      </div>
-      <div class="row"><span class="lbl">보기</span>
-        <button data-vm="surface" aria-pressed="true">겉면</button>
-        <button data-vm="all" aria-pressed="false">전체</button>
-        <button data-vm="slice" aria-pressed="false">단면</button>
-        <button data-vm="domains" aria-pressed="false">자구</button>
-        <select id="surfSel" aria-label="표면 영상"><option value="off">표면 영상 끄기</option><option value="kerr">커 현미경처럼</option><option value="mfm">자기력 현미경처럼</option></select>
-        <select id="sliceAxis" aria-label="단면 축"><option value="y">수평 단면 (y)</option><option value="z">세로 단면 (z)</option><option value="x">세로 단면 (x)</option></select>
-        <input type="range" id="sliceSl" min="0" max="15" step="1" value="8" aria-label="단면 위치">
-      </div>
-      <div class="row"><span class="lbl">입자 모양</span>
-        <select id="shapeSel" aria-label="입자 모양">
-          <option value="cube">정육면체</option>
-          <option value="sphere">구</option>
-          <option value="plate">얇은 판 (두께 1/4)</option>
-          <option value="disk">원판 (두께 1/4)</option>
-          <option value="rod">막대 (굵기 1/3, x 방향)</option>
-        </select>
-      </div>
-      <div class="row"><span class="lbl">결함</span>
-        <label class="chk"><input type="checkbox" id="dInc"> 비자성 개재물</label>
-        <label class="chk"><input type="checkbox" id="dGb"> 결정립 경계</label>
-        <label class="chk"><input type="checkbox" id="dPoly"> 다결정 (결정축이 제각각)</label>
-        <label class="chk"><input type="checkbox" id="dPrec"> 단단한 석출물</label>
-        <label class="chk"><input type="checkbox" id="dStress"> 내부 응력</label>
-      </div>
-      <div class="row"><span class="lbl">결함 양</span>
-        <input type="range" id="defAmt" min="0" max="1" step="0.05" value="0.5" aria-label="결함 양">
-        <span class="val" id="defAmtVal">50%</span>
-        <button id="defNew">다시 배치</button>
-        <label class="chk"><input type="checkbox" id="markChk" checked> 위치 표시</label>
-      </div>
-      <div class="row"><span class="lbl">흐름</span>
-        <label class="chk"><input type="checkbox" id="uflowChk" checked> 자화 흐름선 (자화 방향을 따라 이어지는 선)</label>
-      </div>
-      <div class="row small"><span class="lbl"></span>
-        <span><span style="color:#4a5058">■</span> 비자성 개재물 &nbsp; <span style="color:#9aa4ad">▪</span> 결정립 경계 &nbsp; <span style="color:#7a4fd0">■</span> 석출물</span>
-      </div>
-      <div class="row"><span class="lbl">격자</span>
-        <select id="gridSel" aria-label="격자 해상도"><option value="16">16³</option><option value="32">32³</option><option value="64" disabled>64³ (GPU 전용)</option></select>
-        <label class="chk"><input type="checkbox" id="gpuChk" disabled> GPU 계산</label>
-        <label class="chk"><input type="checkbox" id="thermFix" checked> 열 요동 이중 계산 보정</label>
-      </div>
-      <div class="row small"><span class="lbl"></span><span id="gpuNote">GPU 확인 중</span></div>
-      <div class="row"><span class="lbl">감쇠 α</span>
-        <input type="range" id="alphaSl" min="0.05" max="1" step="0.05" value="0.5" aria-label="감쇠 상수">
-        <span class="val" id="alphaVal">0.50</span>
-      </div>
+      <details class="grp" open>
+        <summary>입자</summary>
+        <div class="grp-body">
+          <div class="row"><span class="lbl">모양</span>
+            <select id="shapeSel" aria-label="입자 모양">
+              <option value="cube">정육면체</option>
+              <option value="sphere">구</option>
+              <option value="plate">얇은 판 (두께 1/4)</option>
+              <option value="disk">원판 (두께 1/4)</option>
+              <option value="rod">막대 (굵기 1/3, x 방향)</option>
+            </select>
+          </div>
+          <div class="row"><span class="lbl">다시 시작</span>
+            <span class="seg"><button data-init="random">무작위</button><button data-init="uniform">한 방향</button><button data-init="vortex">소용돌이</button></span>
+            <button id="pauseBtn" aria-pressed="false">일시정지</button>
+          </div>
+          <div class="row"><span class="lbl">놓인 곳</span>
+            <select id="probeSel" aria-label="탐침 위치">
+              <option value="near">정육면체의 자석 쪽 면</option>
+              <option value="center">정육면체 중심</option>
+              <option value="far">정육면체의 반대쪽 면</option>
+            </select>
+          </div>
+        </div>
+      </details>
+      <details class="grp">
+        <summary>화면에 보일 것</summary>
+        <div class="grp-body">
+          <div class="row checks">
+            <label class="chk"><input type="checkbox" id="uflowChk" checked> 자화 흐름선</label>
+            <label class="chk"><input type="checkbox" id="energyChk" checked> 에너지 막대</label>
+          </div>
+          <div class="row"><span class="lbl">표면 영상</span>
+            <select id="surfSel" aria-label="표면 영상"><option value="off">끄기</option><option value="kerr">커 현미경처럼</option><option value="mfm">자기력 현미경처럼</option></select>
+          </div>
+          <div class="row"><span class="legend"><span class="wheel" aria-hidden="true"></span>화살표 색: 수평 방향, 밝을수록 위(+y)</span></div>
+        </div>
+      </details>
+      <details class="grp">
+        <summary>결함</summary>
+        <div class="grp-body">
+          <div class="row checks">
+            <label class="chk"><input type="checkbox" id="dInc"> 비자성 개재물</label>
+            <label class="chk"><input type="checkbox" id="dGb"> 결정립 경계</label>
+            <label class="chk"><input type="checkbox" id="dPoly"> 다결정</label>
+            <label class="chk"><input type="checkbox" id="dPrec"> 단단한 석출물</label>
+            <label class="chk"><input type="checkbox" id="dStress"> 내부 응력</label>
+          </div>
+          <div class="row"><span class="lbl">양</span>
+            <input type="range" id="defAmt" min="0" max="1" step="0.05" value="0.5" aria-label="결함 양">
+            <span class="val" id="defAmtVal">50%</span>
+            <button id="defNew">다시 배치</button>
+          </div>
+          <div class="row checks">
+            <label class="chk"><input type="checkbox" id="markChk" checked> 위치 표시</label>
+            <span class="small"><span style="color:#4a5058">■</span> 개재물 &nbsp; <span style="color:#9aa4ad">▪</span> 결정립 경계 &nbsp; <span style="color:#7a4fd0">■</span> 석출물</span>
+          </div>
+        </div>
+      </details>
+      <details class="grp">
+        <summary>계산 설정</summary>
+        <div class="grp-body">
+          <div class="row"><span class="lbl">격자</span>
+            <select id="gridSel" aria-label="격자 해상도"><option value="16">16³</option><option value="32">32³</option><option value="64" disabled>64³ (GPU 전용)</option></select>
+            <label class="chk"><input type="checkbox" id="gpuChk" disabled> GPU</label>
+          </div>
+          <div class="row"><span class="lbl">감쇠 α</span>
+            <input type="range" id="alphaSl" min="0.05" max="1" step="0.05" value="0.5" aria-label="감쇠 상수">
+            <span class="val" id="alphaVal">0.50</span>
+          </div>
+          <div class="row checks"><label class="chk"><input type="checkbox" id="thermFix" checked> 열 요동 이중 계산 보정</label></div>
+          <div class="row small"><span id="gpuNote">GPU 확인 중</span></div>
+        </div>
+      </details>
     </div>
   </section>
 </main>
 
-<section class="loop-wrap" style="max-width:1400px;margin:0 auto;padding:0 20px 18px;">
+<section class="loop-wrap">
   <div class="panel">
-    <div class="phead"><h2>이력 곡선 (M–H)</h2><span class="tag exact">자석 대신 코일로 균일한 자기장을 걸어 측정</span></div>
-    <div style="position:relative;height:clamp(260px,40vh,380px);"><canvas id="loopCanvas" style="width:100%;height:100%;display:block;"></canvas></div>
+    <div class="phead"><h2>이력 곡선</h2><span class="unit">M–H</span></div>
+    <div class="loop-plot"><canvas id="loopCanvas"></canvas></div>
     <div class="controls">
-      <div class="row"><span class="lbl">측정</span>
-        <button id="loopBtn" aria-pressed="false">이력 곡선 측정</button>
-        <select id="loopMode" aria-label="측정 방식"><option value="eq" selected>평형 측정 (점마다 자리 잡을 때까지)</option><option value="dyn">동역학 측정 (점마다 정해진 시간)</option></select>
-        <select id="loopAxis" aria-label="자기장 방향"><option value="x">x 방향</option><option value="y">y 방향</option><option value="z">z 방향</option></select>
-        <select id="loopSteps" aria-label="측정 점 수"><option value="10">점 적게 (빠름)</option><option value="20" selected>보통</option><option value="40">점 많이 (정밀)</option></select>
-        <select id="loopDt" aria-label="한 점마다 기다리는 계산 시간"><option value="0.1">한 점당 0.1 ns</option><option value="0.3" selected>한 점당 0.3 ns</option><option value="1">한 점당 1 ns</option></select>
+      <div class="row main">
+        <button id="loopBtn" class="primary" aria-pressed="false">이력 곡선 측정</button>
+        <select id="loopMode" aria-label="측정 방식"><option value="eq" selected>평형 측정</option><option value="dyn">동역학 측정</option></select>
+        <span class="small" id="loopStatus">자석을 치우고 코일로 균일한 자기장을 걸어, +최대 → −최대 → +최대로 바꾸며 평균 자화를 기록해요.</span>
       </div>
-      <div class="row small"><span id="loopStatus">자석을 치우고, 0에서 시작해 +최대 → −최대 → +최대로 자기장을 바꾸며 두 계산의 평균 자화를 기록해요. 측정이 끝나면 원래 상태로 돌아가요.</span></div>
+      <details class="grp">
+        <summary>측정 설정</summary>
+        <div class="grp-body">
+          <div class="row"><span class="lbl">방향</span><select id="loopAxis" aria-label="자기장 방향"><option value="x">x</option><option value="y">y</option><option value="z">z</option></select></div>
+          <div class="row"><span class="lbl">점 개수</span><select id="loopSteps" aria-label="측정 점 수"><option value="10">적게 (빠름)</option><option value="20" selected>보통</option><option value="40">많이 (정밀)</option></select></div>
+          <div class="row"><span class="lbl">점마다</span><select id="loopDt" aria-label="한 점마다 기다리는 계산 시간"><option value="0.1">0.1 ns 계산</option><option value="0.3" selected>0.3 ns 계산</option><option value="1">1 ns 계산</option></select><span class="small">동역학 측정에서만</span></div>
+        </div>
+      </details>
     </div>
   </div>
 </section>
+
 <section class="notes">
   <details open>
     <summary>무엇이 정확한 계산이고 무엇이 근사인가</summary>

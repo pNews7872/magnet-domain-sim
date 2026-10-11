@@ -94,3 +94,39 @@ table { border-collapse: collapse; font-size: 0.86rem; font-variant-numeric: tab
 th, td { text-align: left; padding: 6px 12px 6px 0; border-bottom: 1px solid var(--rule); }
 th { font-weight: 600; }
 .small { font-size: 0.82rem; color: var(--muted); }
+
+/* ===== 정리된 배치 ===== */
+.hrow { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 24px; }
+.htext { min-width: 0; flex: 1 1 420px; }
+.scene select { min-width: 15em; }
+.scene-note { margin: 8px 0 0; color: var(--ink); font-size: 0.9rem; max-width: 80ch; }
+.scene-note:empty { display: none; }
+.phead { align-items: center; padding: 11px 14px; }
+.unit { font-size: 0.78rem; color: var(--muted); border: 1px solid var(--rule); border-radius: 999px; padding: 1px 8px; font-variant-numeric: tabular-nums; }
+.controls { gap: 8px; padding: 12px 14px 12px; }
+.row.main { min-height: 34px; }
+.row > .lbl { min-width: 4.6em; }
+.seg { display: inline-flex; }
+.seg > button { border-radius: 0; margin-left: -1px; }
+.seg > button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+.seg > button:last-child { border-radius: 0 6px 6px 0; }
+button.quiet { border-color: transparent; color: var(--muted); }
+button.quiet:hover { color: var(--ink); border-color: var(--rule); }
+button.primary { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+button.primary[aria-pressed="true"] { background: var(--surface); color: var(--ink); }
+.controls details.grp { border: 0; border-top: 1px solid var(--rule); border-radius: 0; background: none; box-shadow: none; margin: 2px -14px 0; padding: 0 14px; }
+.controls details.grp > summary { padding: 9px 0; margin: 0; background: none; border: 0; }
+.grp > summary { list-style: none; cursor: pointer; padding: 9px 0; font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.grp > summary::-webkit-details-marker { display: none; }
+.grp > summary::before { content: ""; width: 7px; height: 7px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(-45deg); transition: transform .15s; margin-right: 2px; }
+.grp[open] > summary::before { transform: rotate(45deg); }
+.grp-body { display: grid; gap: 8px; padding: 0 0 12px; }
+.row.checks { gap: 6px 16px; }
+.slice-only { display: none; gap: 8px; align-items: center; }
+.slice-on .slice-only { display: inline-flex; }
+.readout { font-size: 0.8rem; max-width: min(430px, calc(100% - 20px)); }
+.loop-wrap { max-width: 1400px; margin: 0 auto; padding: 0 20px 18px; }
+.loop-plot { position: relative; height: clamp(240px, 36vh, 360px); }
+.loop-plot canvas { width: 100%; height: 100%; display: block; }
+@media (prefers-reduced-motion: reduce) { .grp > summary::before { transition: none; } }
+@media (max-width: 999px) { .loop-wrap { padding: 0 10px 14px; } .scene select { width: 100%; } }
