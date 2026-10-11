@@ -34,9 +34,34 @@ main { max-width: 1400px; margin: 0 auto; padding: 8px 20px 12px; display: grid;
 .view { position: relative; height: clamp(320px, 56vh, 620px); background: var(--scene); touch-action: pan-y; }
 .view canvas { touch-action: pan-y; }
 .tb, .hint .touch { display: none; }
-@media (max-width: 999px) { .lr { display: none; } .tb { display: inline; } .view { height: clamp(300px, 50vh, 480px); } }
+@media (max-width: 999px) { .lr { display: none; } .tb { display: inline; } }
 @media (hover: none) and (pointer: coarse) { .hint .mouse { display: none; } .hint .touch { display: inline; } }
-@media (max-width: 700px) { .readout { pointer-events: auto; cursor: pointer; max-height: 3.1em; overflow: hidden; padding-right: 26px; } .readout::after { content: '▾'; position: absolute; right: 9px; top: 6px; color: var(--muted); } .readout.open { max-height: none; } .readout.open::after { content: '▴'; } }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+button, select, input, label.chk, summary { touch-action: manipulation; }
+.info { display: none; }
+/* 좁은 화면: 3D 화면 높이를 화면 너비로 고정해서, 주소창이 접히고 펴질 때 화면이 늘었다 줄었다 하며 깜빡이지 않게 함 */
+@media (max-width: 999px) {
+  main { padding: 6px 10px 12px; gap: 14px; }
+  header { padding: 16px 12px 6px; }
+  .view { height: auto; aspect-ratio: 1 / 1; max-height: 70vh; max-height: 70svh; }
+  .view > .readout { display: none; }
+  .info { display: block; font-size: 0.95rem; line-height: 1.6; padding: 10px 14px; border-top: 1px solid var(--rule); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .hint { left: 8px; right: 8px; bottom: 8px; font-size: 0.8rem; background: color-mix(in srgb, var(--surface) 80%, transparent); border-radius: 6px; padding: 4px 8px; text-align: center; }
+  .busy { font-size: 0.85rem; }
+  .phead { padding: 10px 12px 8px; }
+  .controls { padding: 12px 12px 14px; gap: 12px; }
+  .row > .lbl { flex: 0 0 100%; min-width: 0; margin-bottom: -4px; font-weight: 500; color: var(--ink); }
+  .notes { padding: 4px 10px 32px; }
+}
+/* 손가락으로 누르기 쉽게: 버튼·선택·체크·슬라이더를 크게 */
+@media (pointer: coarse) {
+  button, select { min-height: 44px; padding: 8px 14px; font-size: 0.95rem; }
+  label.chk { min-height: 40px; font-size: 0.95rem; }
+  label.chk input { width: 20px; height: 20px; }
+  input[type=range] { height: 36px; min-width: 0; flex: 1 1 100%; }
+  .val { min-width: 0; }
+  summary { padding: 14px 0; }
+}
 .view canvas { display: block; width: 100%; height: 100%; }
 .readout { position: absolute; left: 10px; top: 10px; font-size: 0.82rem; line-height: 1.5; background: color-mix(in srgb, var(--surface) 86%, transparent); border: 1px solid var(--rule); border-radius: 8px; padding: 7px 10px; pointer-events: none; font-variant-numeric: tabular-nums; max-width: calc(100% - 20px); }
 .readout b { font-weight: 600; }

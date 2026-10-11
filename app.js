@@ -83,7 +83,7 @@ function makeRenderer(container, alpha) {
   let r;
   try { r = new THREE.WebGLRenderer({ antialias: true, alpha: !!alpha }); }
   catch (e) { container.innerHTML = '<div class="overlay on"><div>이 브라우저에서 WebGL을 사용할 수 없어 3D 화면을 그릴 수 없어요. 다른 브라우저에서 열어 보세요.</div></div>'; throw e; }
-  r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  r.setPixelRatio(Math.min(window.devicePixelRatio || 1, window.matchMedia('(pointer: coarse)').matches ? 1.5 : 2)); // 휴대폰은 해상도를 조금 낮춰 부드럽게
   container.insertBefore(r.domElement, container.firstChild);
   return r;
 }
@@ -1215,7 +1215,8 @@ document.querySelectorAll('[data-vm]').forEach(b => b.addEventListener('click', 
 }));
 ['sliceAxis', 'sliceSl'].forEach(id => $(id).addEventListener('input', () => { markVis(); if (viewMode !== 'slice') document.querySelector('[data-vm="slice"]').click(); else { if (microFrame) drawMicro(microFrame.m); drawMarks(); } }));
 
-document.querySelectorAll('.readout').forEach(r => r.addEventListener('click', () => r.classList.toggle('open')));
+// 좁은 화면에서는 3D 화면 위 판독창 대신 화면 아래 정보 칸에 같은 내용을 보여줌
+for (const [a, b] of [['macroReadout', 'macroInfo'], ['microReadout', 'microInfo']]) { const src = $(a), dst = $(b); const copy = () => { if (dst.innerHTML !== src.innerHTML) dst.innerHTML = src.innerHTML; }; new MutationObserver(copy).observe(src, { childList: true, subtree: true, characterData: true }); copy(); }
 // 테마 색
 function applyTheme() {
   mR.setClearColor(new THREE.Color(cssColor('--scene') || '#dfe5e9'));
@@ -1235,7 +1236,9 @@ const touchHintText = '한 손가락: 스크롤 · 두 손가락: 회전과 확�
 function resize() {
   for (const [r, cam, el] of [[mR, mCam, macroView], [uR, uCam, microView]]) {
     const w = el.clientWidth, h = el.clientHeight; if (!w || !h) continue;
+    const cur = r.getSize(new THREE.Vector2()); if (Math.abs(cur.x - w) < 1 && Math.abs(cur.y - h) < 1) continue; // 크기가 그대로면 다시 만들지 않음 (깜빡임 방지)
     r.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix();
+    if (r === mR) mR.render(mScene, mCam); else uR.render(uScene, uCam); // 크기를 바꾼 그 순간 바로 다시 그려서 검은 화면이 보이지 않게
   }
 }
 new ResizeObserver(resize).observe(macroView); new ResizeObserver(resize).observe(microView); resize();
