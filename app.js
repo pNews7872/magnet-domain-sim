@@ -17,16 +17,18 @@ const MATS = {
         ja: { a: 1.259, k: 34.72, c: 0.474, alpha: 2.36e-6, chi0: 8000 }, ref: { name: '78 퍼멀로이', Hc: 4.0, Br: 0.70, mu: 100000 }, fit: { Hc: 4.9, Br: 0.60, mu: 96000 } },
   Mt: { name: '자철석', topic: '자철석은', kind: 'ferro', Ms: 4.8e5, A: 1.33e-11, K1: -1.33e4, aniso: 'cubic', axis: [0, 1, 0], Tc: 858, s: 0.3, p: 2.5, Aexp: 1.7, lam: 40e-6, color: 0x4a4d52, anisoText: '입방, 용이축 ⟨111⟩ (Fe₃O₄, 페리자성)', def: 100, approxT: true, warnLo: 130,
         linChi: 3 },
-  Al: { name: '알루미늄', topic: '알루미늄은', kind: 'para', chi: 2.2e-5, color: 0xc4c9cf },
-  Pt: { name: '백금', topic: '백금은', kind: 'para', chi: 2.6e-4, color: 0xd9d6cf },
-  Cu: { name: '구리', topic: '구리는', kind: 'dia', chi: -9.6e-6, color: 0xb87333 },
-  Ag: { name: '은', topic: '은은', kind: 'dia', chi: -2.4e-5, color: 0xd0d4d8 },
-  Au: { name: '금', topic: '금은', kind: 'dia', chi: -3.4e-5, color: 0xd4a52a },
-  Bi: { name: '비스무트', topic: '비스무트는', kind: 'dia', chi: -1.66e-4, color: 0xb9a9c2 }
+  Al: { name: '알루미늄', sigma20: 37700000.0, alphaR: 0.00429, topic: '알루미늄은', kind: 'para', chi: 2.2e-5, color: 0xc4c9cf },
+  Pt: { name: '백금', sigma20: 9430000.0, alphaR: 0.00392, topic: '백금은', kind: 'para', chi: 2.6e-4, color: 0xd9d6cf },
+  Cu: { name: '구리', sigma20: 59600000.0, alphaR: 0.00404, topic: '구리는', kind: 'dia', chi: -9.6e-6, color: 0xb87333 },
+  Ag: { name: '은', sigma20: 63000000.0, alphaR: 0.0038, topic: '은은', kind: 'dia', chi: -2.4e-5, color: 0xd0d4d8 },
+  Au: { name: '금', sigma20: 41000000.0, alphaR: 0.0034, topic: '금은', kind: 'dia', chi: -3.4e-5, color: 0xd4a52a },
+  Bi: { name: '비스무트', sigma20: 770000.0, alphaR: 0.0045, topic: '비스무트는', kind: 'dia', chi: -1.66e-4, color: 0xb9a9c2 }
 };
 // Kuz'min 식: m(τ) = [1 − sτ^(3/2) − (1−s)τ^p]^(1/3)
 function mRed(mat, T) { const t = T / mat.Tc; if (t >= 1) return 0; const v = 1 - mat.s * Math.pow(t, 1.5) - (1 - mat.s) * Math.pow(t, mat.p); return v > 0 ? Math.cbrt(v) : 0; }
 // 퀴리 온도 위 상자성: χ = C/(T − θ), C = μ0 n p² μB² / (3kB), θ ≈ Tc로 근사
+// 전기 전도도의 온도 변화: ρ(T) = ρ20 [1 + α(T − 293 K)], 아주 낮은 온도에서는 잔류 저항 수준(상온의 1/10)에서 멈춘다고 근사
+function sigmaAtT(mat, T) { if (!mat.sigma20) return 0; const r = Math.max(0.1, 1 + mat.alphaR * (T - 293.15)); return mat.sigma20 / r; }
 function chiCW(mat, T) { if (!mat.peff) return 0; const C = MU0 * mat.nat * Math.pow(mat.peff * 9.274e-24, 2) / (3 * 1.380649e-23); return C / Math.max(5, T - mat.Tc); }
 // 열 요동 이중 계산 보정: 칸 크기에서 열 요동이 줄이는 정렬 정도 f(x), x = kT/(AΔ) (이 프로그램으로 직접 보정한 곡선)
 function thermalF(x) { x = Math.min(2, Math.max(0, x)); return 1 - 0.1435 * x - 0.0115 * x * x; }
@@ -182,7 +184,7 @@ mScene.add(dotObj);
 let lines = [], allLines = []; // 화면에 보이는 선 / 계산된 전체 선
 let flowPhase = 0;
 
-let touchDragMagnet = false, userOrbiting = false;
+let touchDragMagnet = false, userOrbiting = false, magDrag = false, magVel = [0, 0, 0], lastMagPos = null, lastMagT = 0, eddyRes = null, eddyT = 0;
 const mCtl = (function () {
   // 자석 끌기: OrbitControls보다 먼저 등록
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -201,7 +203,7 @@ const mCtl = (function () {
     lpTimer = setTimeout(() => { // 길게 누르면 자석 잡기
       touchNdc(t); ray.setFromCamera(ndc, mCam);
       if (ray.intersectObject(magnet, true).length) {
-        touchDragMagnet = true; controls.enabled = false; plane.constant = -magnet.position.y;
+        touchDragMagnet = true; magDrag = true; controls.enabled = false; plane.constant = -magnet.position.y;
         if (ray.ray.intersectPlane(plane, hit)) offset.copy(magnet.position).sub(hit);
         if (navigator.vibrate) navigator.vibrate(15);
         $('macroHintTouch').textContent = '자석을 잡았어요. 끌어서 옮기세요';
@@ -220,13 +222,13 @@ const mCtl = (function () {
       e.stopImmediatePropagation(); // 스크롤 허용
     }
   }, { passive: false });
-  const tend = (e) => { clearTimeout(lpTimer); if (touchDragMagnet && e.touches.length === 0) { touchDragMagnet = false; controls.enabled = true; $('macroHintTouch').textContent = touchHintText; } };
+  const tend = (e) => { clearTimeout(lpTimer); if (touchDragMagnet && e.touches.length === 0) { touchDragMagnet = false; magDrag = false; markDirty(); controls.enabled = true; $('macroHintTouch').textContent = touchHintText; } };
   el.addEventListener('touchend', tend); el.addEventListener('touchcancel', tend);
   el.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'touch') return;
     setNdc(e); ray.setFromCamera(ndc, mCam);
     if (ray.intersectObject(magnet, true).length) {
-      dragging = true; pid = e.pointerId; controls.enabled = false; el.setPointerCapture(pid);
+      dragging = true; magDrag = true; pid = e.pointerId; controls.enabled = false; el.setPointerCapture(pid);
       plane.constant = -magnet.position.y;
       if (ray.ray.intersectPlane(plane, hit)) offset.copy(magnet.position).sub(hit);
       el.style.cursor = 'grabbing';
@@ -247,7 +249,7 @@ const mCtl = (function () {
       resolveOverlap(); markDirty();
     }
   });
-  const end = () => { if (dragging) { dragging = false; controls.enabled = true; try { el.releasePointerCapture(pid); } catch (e) {} el.style.cursor = ''; } };
+  const end = () => { if (dragging) { dragging = false; magDrag = false; markDirty(); controls.enabled = true; try { el.releasePointerCapture(pid); } catch (e) {} el.style.cursor = ''; } };
   el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
   const controls = new THREE.OrbitControls(mCam, el);
   controls.target.set(-1.5, 0, 0); controls.enableDamping = true; controls.minDistance = 6; controls.maxDistance = 60;
@@ -395,7 +397,7 @@ function onMacroMsg(d) {
 })();
 function macroMatMsg(reset) {
   const m = MATS[matKey];
-  if (m.kind !== 'ferro') return { key: matKey, small: true, chi: m.chi };
+  if (m.kind !== 'ferro') return { key: matKey, small: true, chi: m.chi, sigma: sigmaAtT(m, tempK) };
   const eff = matAtT(m, tempK);
   if (eff.m < 0.02) { const c = chiCW(m, tempK); return c ? { key: matKey + ':para', small: true, chi: c } : { key: matKey, off: true }; }
   if (m.linChi) return { key: matKey, linear: true, chi: m.linChi, Ms: eff.Ms, reset };
@@ -408,11 +410,32 @@ function requestMacro() {
   macroBusy = true; $('macroBusy').hidden = false;
   const frame = magnetAway ? { R: MF.R, c: [0, 0, -1e4] } : { R: MF.R, c: MF.c };
   sentVersion = posVersion;
-  macroEngine.msg({ type: 'update', id: posVersion, frame, lines: $('linesChk').checked });
+  // 자석 속도 (cm/s): 끌고 있는 동안만, 최근 움직임으로 부드럽게 추정
+  const now = performance.now(), p = magnet.position;
+  if (magDrag && lastMagPos && now > lastMagT) { const dt = Math.max(0.016, (now - lastMagT) / 1000); for (let i = 0; i < 3; i++) magVel[i] = 0.5 * magVel[i] + 0.5 * ([p.x, p.y, p.z][i] - lastMagPos[i]) / dt; }
+  else if (!magDrag) magVel = [0, 0, 0];
+  lastMagPos = [p.x, p.y, p.z]; lastMagT = now;
+  const vel = Math.hypot(...magVel) > 0.3 ? magVel.slice() : null;
+  macroEngine.msg({ type: 'update', id: posVersion, frame, lines: $('linesChk').checked, vel });
 }
 // 블록별 자화 화살표 (8³)
 const BN = 8, BH = 5 / BN;
 const bConeGeo = new THREE.ConeGeometry(0.16, 0.5, 8);
+// 맴돌이 전류 화살표 (8³, 청록색)
+const eCones = new THREE.InstancedMesh(new THREE.ConeGeometry(0.14, 0.5, 8), new THREE.MeshStandardMaterial({ color: 0x1f8a8a, roughness: 0.5 }), 512);
+{ const z0 = new THREE.Matrix4().makeScale(0, 0, 0); for (let i = 0; i < 512; i++) eCones.setMatrixAt(i, z0); }
+function drawEddy() {
+  const q = new THREE.Quaternion(), pos = new THREE.Vector3(), sc = new THREE.Vector3(), mtx = new THREE.Matrix4(), v = new THREE.Vector3(), upv = new THREE.Vector3(0, 1, 0);
+  const J = eddyRes && eddyRes.J; let mx = 0; if (J) for (let i = 0; i < 512; i++) mx = Math.max(mx, Math.hypot(J[3 * i], J[3 * i + 1], J[3 * i + 2]));
+  for (let z = 0, id = 0; z < 8; z++) for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++, id++) {
+    const jm = J ? Math.hypot(J[3 * id], J[3 * id + 1], J[3 * id + 2]) : 0;
+    if (!J || jm < 0.08 * mx) { mtx.makeScale(0, 0, 0); eCones.setMatrixAt(id, mtx); continue; }
+    pos.set(-2.5 + 0.625 * (x + 0.5), -2.5 + 0.625 * (y + 0.5), -2.5 + 0.625 * (z + 0.5)); v.set(J[3 * id] / jm, J[3 * id + 1] / jm, J[3 * id + 2] / jm); q.setFromUnitVectors(upv, v);
+    const f = 0.35 + 0.9 * Math.sqrt(jm / mx); sc.set(f, f, f); mtx.compose(pos, q, sc); eCones.setMatrixAt(id, mtx);
+  }
+  eCones.instanceMatrix.needsUpdate = true;
+}
+mScene.add(eCones);
 const bCones = new THREE.InstancedMesh(bConeGeo, new THREE.MeshStandardMaterial({ color: 0x1d2630, roughness: 0.6 }), BN * BN * BN);
 { const z0 = new THREE.Matrix4().makeScale(0, 0, 0); for (let i = 0; i < BN ** 3; i++) bCones.setMatrixAt(i, z0); }
 mScene.add(bCones);
@@ -420,6 +443,8 @@ function applyMacroResult(d, fresh) {
   if (!macroBusy) $('macroBusy').hidden = true;
   const mat = MATS[matKey];
   targetM = d.avg; forceN = d.F;
+  if (d.ed) { eddyRes = d.ed; eddyT = performance.now(); forceN = d.F.map((v, i) => v + d.ed.F[i]); } else if (!magDrag) eddyRes = null;
+  drawEddy();
   // 자기력선: 최신 위치의 정밀 결과면 그대로, 아니면 미리보기로 다시 그림
   if (fresh && d.lines) {
     allLines = []; let off = 0;
@@ -1116,7 +1141,10 @@ function updateArrowsAndReadout(d) {
     }
   } else {
     html += `정육면체 자화: <b>${sci(Mn)} A/m</b>, 자기장 ${mat.kind === 'dia' ? '반대' : '같은'} 방향<br>`;
-    if (!magnetAway) html += `${toward > 0 ? '끌리는' : '밀어내는'} 힘: <b>${sci(Fn, 2)} N</b>`;
+    if (eddyRes) {
+      const Fe = Math.hypot(...eddyRes.F), Fd = d ? Math.hypot(...d.F) : 0;
+      html += `<b style="color:#1f8a8a">맴돌이 전류</b>: 자석 속도 ${(eddyRes.v * 100).toFixed(eddyRes.v < 0.1 ? 1 : 0)} cm/s, 전류가 받는 힘 <b>${sci(Fe, 2)} N</b>${Fd > 0 ? ` (반자성 힘의 약 ${sci(Fe / Fd, 2)}배)` : ''}<br>정육면체가 자석 움직임을 따라 끌려가고, 자석은 그만큼 제동을 받아요. 열로 바뀌는 전력 ${sci(eddyRes.P, 2)} W`;
+    } else if (!magnetAway) html += `${toward > 0 ? '끌리는' : '밀어내는'} 힘: <b>${sci(Fn, 2)} N</b>` + (mat.sigma20 ? `<br><span style="color:var(--muted)">자석을 끌어 움직이면 맴돌이 전류가 생겨요</span>` : '');
   }
   $('macroReadout').innerHTML = html;
   if (!microActive()) updateMicroOverlayText();

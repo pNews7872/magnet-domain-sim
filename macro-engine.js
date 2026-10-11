@@ -119,6 +119,59 @@ function makeMacroEngine(post) {
     }
     return out;
   }
+  // ===== 맴돌이 전류 (비자성 도체, 자석이 움직일 때): 느린 운동 근사 =====
+  // 도체 안 전기장 E = E0 − ∇φ, E0 = −∂A/∂t = (v·∇)A (자석이 속도 v로 움직임), ∇·J = 0, 겉면에서 J·n = 0
+  const EN = 16, Eh = 2 * TH / EN; // 16³ 칸, 한 칸 3.125 mm
+  function magnetA(x, y, z, out) { // 자석을 2×4×4개 쌍극자로 나눈 벡터 퍼텐셜 (T·m), 좌표 cm
+    const R = frame.R, c = frame.c, Mv = BR / MU0, dV = (1 * 2 * 2) / 32 * 1e-6, mm = Mv * dV, ux = R[0], uy = R[1], uz = R[2];
+    out[0] = out[1] = out[2] = 0;
+    for (let i = 0; i < 2; i++) for (let j = 0; j < 4; j++) for (let k = 0; k < 4; k++) {
+      const lx = -0.5 + 0.5 * (i + 0.5), ly = -1 + 0.5 * (j + 0.5), lz = -1 + 0.5 * (k + 0.5);
+      const px = c[0] + R[0] * lx + R[3] * ly + R[6] * lz, py = c[1] + R[1] * lx + R[4] * ly + R[7] * lz, pz = c[2] + R[2] * lx + R[5] * ly + R[8] * lz;
+      const rx = (x - px) * 0.01, ry = (y - py) * 0.01, rz = (z - pz) * 0.01, r2 = rx * rx + ry * ry + rz * rz, k3 = 1e-7 * mm / (r2 * Math.sqrt(r2));
+      out[0] += k3 * (uy * rz - uz * ry); out[1] += k3 * (uz * rx - ux * rz); out[2] += k3 * (ux * ry - uy * rx);
+    }
+    return out;
+  }
+  function eddy(vel, sigma) { // vel: 자석 속도 cm/s
+    const n = EN, n3e = n * n * n, vm = [vel[0] * 0.01, vel[1] * 0.01, vel[2] * 0.01], vs = Math.hypot(...vm); if (!(vs > 0)) return null;
+    const E0 = new Float64Array(3 * n3e), a = [0, 0, 0], b = [0, 0, 0], dl = 0.02, u = vel.map(v => v / Math.hypot(...vel)); // cm
+    const cen = (i) => -TH + Eh * (i + 0.5);
+    for (let k = 0, id = 0; k < n; k++) for (let j = 0; j < n; j++) for (let i = 0; i < n; i++, id++) {
+      const x = cen(i), y = cen(j), z = cen(k);
+      magnetA(x + dl * u[0], y + dl * u[1], z + dl * u[2], a); magnetA(x - dl * u[0], y - dl * u[1], z - dl * u[2], b);
+      const s = vs / (2 * dl * 0.01); E0[3 * id] = s * (a[0] - b[0]); E0[3 * id + 1] = s * (a[1] - b[1]); E0[3 * id + 2] = s * (a[2] - b[2]);
+    }
+    // 유한 부피: Σ_이웃 (φ_i − φ_j) = −h Σ_면 (E0·n) , 겉면은 흐름 0
+    const hm = Eh * 0.01, rhs = new Float64Array(n3e), deg = new Float64Array(n3e), st = [1, n, n * n];
+    for (let k = 0, id = 0; k < n; k++) for (let j = 0; j < n; j++) for (let i = 0; i < n; i++, id++) {
+      const cc = [i, j, k];
+      for (let ax = 0; ax < 3; ax++) for (const sg of [-1, 1]) {
+        const q = cc[ax] + sg; if (q < 0 || q >= n) continue; const jd = id + sg * st[ax];
+        rhs[id] -= hm * sg * 0.5 * (E0[3 * id + ax] + E0[3 * jd + ax]); deg[id]++;
+      }
+    }
+    const Lap = (p, out) => { for (let k = 0, id = 0; k < n; k++) for (let j = 0; j < n; j++) for (let i = 0; i < n; i++, id++) { let s = deg[id] * p[id]; if (i > 0) s -= p[id - 1]; if (i < n - 1) s -= p[id + 1]; if (j > 0) s -= p[id - n]; if (j < n - 1) s -= p[id + n]; if (k > 0) s -= p[id - n * n]; if (k < n - 1) s -= p[id + n * n]; out[id] = s; } };
+    let mean = 0; for (let i = 0; i < n3e; i++) mean += rhs[i]; mean /= n3e; for (let i = 0; i < n3e; i++) rhs[i] -= mean;
+    const phi = new Float64Array(n3e), r = Float64Array.from(rhs), p = Float64Array.from(rhs), Ap = new Float64Array(n3e);
+    let rr = 0; for (let i = 0; i < n3e; i++) rr += r[i] * r[i]; const r0 = rr;
+    for (let it = 0; it < 400 && rr > 1e-20 * r0; it++) { Lap(p, Ap); let pAp = 0; for (let i = 0; i < n3e; i++) pAp += p[i] * Ap[i]; const al = rr / pAp; let rn = 0; for (let i = 0; i < n3e; i++) { phi[i] += al * p[i]; r[i] -= al * Ap[i]; rn += r[i] * r[i]; } const be = rn / rr; rr = rn; for (let i = 0; i < n3e; i++) p[i] = r[i] + be * p[i]; }
+    // 칸 중심의 전류 밀도 J = σ(E0 − ∇φ), 힘 F = ∫ J × B dV, 열 P = ∫ J²/σ dV
+    const J = new Float64Array(3 * n3e), F = [0, 0, 0], Bt = [0, 0, 0], dV = Math.pow(hm, 3); let P = 0, jmax = 0;
+    for (let k = 0, id = 0; k < n; k++) for (let j = 0; j < n; j++) for (let i = 0; i < n; i++, id++) {
+      const cc = [i, j, k], g = [0, 0, 0];
+      for (let ax = 0; ax < 3; ax++) { const lo = cc[ax] > 0 ? id - st[ax] : id, hi = cc[ax] < n - 1 ? id + st[ax] : id, span = (hi === id ? 0 : 1) + (lo === id ? 0 : 1); g[ax] = span ? (phi[hi] - phi[lo]) / (span * hm) : 0; }
+      for (let ax = 0; ax < 3; ax++) J[3 * id + ax] = sigma * (E0[3 * id + ax] - g[ax]);
+      Btool(cen(i), cen(j), cen(k), Bt);
+      const jx = J[3 * id], jy = J[3 * id + 1], jz = J[3 * id + 2];
+      F[0] += dV * (jy * Bt[2] - jz * Bt[1]); F[1] += dV * (jz * Bt[0] - jx * Bt[2]); F[2] += dV * (jx * Bt[1] - jy * Bt[0]);
+      const j2 = jx * jx + jy * jy + jz * jz; P += dV * j2 / sigma; if (j2 > jmax) jmax = j2;
+    }
+    // 화면용으로 8³로 묶기
+    const Jc = new Float32Array(3 * 512);
+    for (let k = 0; k < n; k++) for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const id = i + n * (j + n * k), c8 = (i >> 1) + 8 * ((j >> 1) + 8 * (k >> 1)); for (let ax = 0; ax < 3; ax++) Jc[3 * c8 + ax] += J[3 * id + ax] / 8; }
+    return { J: Jc, F, P, jmax: Math.sqrt(jmax), v: vs };
+  }
   let busy = false, pending = null;
   function run(d) {
     const t0 = Date.now();
@@ -136,6 +189,7 @@ function makeMacroEngine(post) {
     prepTarget();
     const avg = [0, 0, 0]; for (let i = 0; i < n3; i++) { avg[0] += M[3 * i] / n3; avg[1] += M[3 * i + 1] / n3; avg[2] += M[3 * i + 2] / n3; }
     const F = computeForce(M);
+    const ed = (mat && mat.sigma && d.vel && Math.hypot(frame.c[0], frame.c[1], frame.c[2]) < 100) ? eddy(d.vel, mat.sigma) : null;
     let lines = null;
     if (d.lines) {
       const R = frame.R, c = frame.c, seeds = [];
@@ -158,7 +212,7 @@ function makeMacroEngine(post) {
     const sup = new Float32Array(3 * SUP.length); SUP.forEach((s, i) => { sup[3 * i] = s.J[0]; sup[3 * i + 1] = s.J[1]; sup[3 * i + 2] = s.J[2]; });
     const Mf = Float32Array.from(M);
     const tr = [Mf.buffer, grid.buffer, sup.buffer]; if (lines) tr.push(lines.pos.buffer, lines.len.buffer);
-    post({ type: 'result', id: d.id, M: Mf, avg, F, lines, grid, sup, anyJ, ms: Date.now() - t0 }, tr);
+    post({ type: 'result', id: d.id, M: Mf, avg, F, lines, grid, sup, anyJ, ed, ms: Date.now() - t0 }, tr);
   }
   function pump() { if (busy || !pending) return; busy = true; const d = pending; pending = null; try { run(d); } finally { busy = false; } if (pending) setTimeout(pump, 0); }
   return {
