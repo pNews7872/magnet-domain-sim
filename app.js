@@ -1461,12 +1461,14 @@ function loop(now) {
     const hB = Math.hypot(...probeB);
     hArrow.visible = hB > 1e-5;
     if (hArrow.visible) { const d = new THREE.Vector3(...probeB).normalize(); hArrow.position.copy(d.clone().multiplyScalar(-15)); hArrow.setDirection(d); hArrow.setLength(5, 1.6, 1.0); }
-    $('microReadout').innerHTML =
+    const side = ($('energyChk').checked ? energyHTML(lastEnergy) : '').replace(/^<br>/, '');
+    $('microReadout').classList.toggle('split', !!side);
+    $('microReadout').innerHTML = '<div class="ro-main">' +
       `${mat.name} 나노 ${SHAPE_NAME[$('shapeSel').value]}, ${SIZE_LABEL[$('shapeSel').value]} <b>${edge} nm</b> (한 칸 ${(edge / NGRID).toFixed(2)} nm, ${NGRID}³ 칸, ${microFrame.gpu ? 'GPU' : 'CPU'}${thermFix > 1.0005 ? `, 열 보정 Ms ×${thermFix.toFixed(3)}` : ''})<br>` +
       `받는 자기장: <b>${(hB * 1000).toFixed(hB < 0.001 ? 2 : 0)} mT</b> (주황 화살표)<br>` +
       `평균 자화 방향 ⟨m⟩ = (${a.map(v => v.toFixed(2)).join(', ')})<br>` +
       `계산된 시간 ${fmtT(microFrame.tns)}${rateText(microFrame.tns)}, ${microFrame.thermal ? `<b>${Math.round(tempK)} K 열 요동 중</b>` : microFrame.stable ? '<b>안정 상태</b>' : '자리 잡는 중'}` +
-      neelText(mat, edge, a) + warnText(mat) + ($('energyChk').checked ? energyHTML(lastEnergy) : '') + (viewMode === 'domains' ? domStatsHTML : '');
+      neelText(mat, edge, a) + warnText(mat) + (viewMode === 'domains' ? domStatsHTML : '') + '</div>' + (side ? '<div class="ro-side">' + side + '</div>' : ''); // 왼쪽: 입자 상태, 오른쪽: 에너지와 자구 통계
   }
   updateDots(dt);
   if ($('uflowChk').checked && microActive() && microFrame && microFrame !== ufFrame && performance.now() - ufLast > (NGRID >= 64 ? 450 : 200)) { ufFrame = microFrame; ufLast = performance.now(); traceFlow(microFrame.m); }

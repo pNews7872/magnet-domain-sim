@@ -133,5 +133,8 @@ button.primary[aria-pressed="true"] { background: var(--surface); color: var(--i
 @media (min-width: 1000px) {
   .view > .readout { max-width: none; width: calc(100% - 20px); box-sizing: border-box; column-width: 230px; column-gap: 26px; column-rule: 1px solid var(--rule); }
   .view > .readout > br { break-after: auto; }
+  /* 나노 입자 판독창: 왼쪽(입자 상태)을 넓게, 오른쪽(에너지·자구 통계)을 좁게 나눠 줄이 단 사이에서 끊기지 않게 */
+  .view > .readout.split { columns: auto; column-width: auto; column-rule: none; display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr); column-gap: 22px; }
+  .view > .readout.split > .ro-side { border-left: 1px solid var(--rule); padding-left: 16px; }
 }
 @media (max-width: 999px) { .loop-wrap { padding: 0 10px 14px; } .scene select { width: 100%; } }
