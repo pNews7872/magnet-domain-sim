@@ -75,7 +75,9 @@ function cssColor(name) { return getComputedStyle(document.documentElement).getP
 // ===== 거시 장면 =====
 const TH = 2.5; // 정육면체 반폭 (cm)
 const MAG_HALF = [0.5, 1, 1]; // 자석 반폭 (cm): 자화 방향(국소 x)으로 두께 1 cm
-const BR = 1.3; // T
+let BR = 1.3; // T, 자석 종류에 따라 바뀜
+// 자석 종류: 잔류 자속 밀도 Br (대표값). 모양과 크기는 같다고 둠
+const MAGNETS = { ndfeb: { name: '네오디뮴 (N42)', Br: 1.30 }, smco: { name: '사마륨-코발트 (Sm₂Co₁₇)', Br: 1.05 }, alnico: { name: '알니코 5', Br: 1.25 }, ferrite: { name: '페라이트 (냉장고 자석)', Br: 0.40 } };
 let matKey = 'Fe';
 let targetJ = [0, 0, 0]; // μ0 M (T)
 let targetM = [0, 0, 0];
@@ -408,7 +410,7 @@ function sendMacroMat(reset) { macroEngine.msg({ type: 'mat', mat: macroMatMsg(r
 function requestMacro() {
   if (macroBusy) { macroQueued = true; return; }
   macroBusy = true; $('macroBusy').hidden = false;
-  const frame = magnetAway ? { R: MF.R, c: [0, 0, -1e4] } : { R: MF.R, c: MF.c };
+  const frame = magnetAway ? { R: MF.R, c: [0, 0, -1e4], Br: BR } : { R: MF.R, c: MF.c, Br: BR };
   sentVersion = posVersion;
   // 자석 속도 (cm/s): 끌고 있는 동안만, 최근 움직임으로 부드럽게 추정
   const now = performance.now(), p = magnet.position;
@@ -1302,7 +1304,7 @@ async function runSweep() {
   try {
     for (let k = 0; k < path.length && !sweep.stop; k++) {
       const Hu = [0, 0, 0]; Hu[ax] = path[k];
-      const macroP = new Promise(res => { sweepMacroWait = res; macroEngine.msg({ type: 'update', id: 'sw' + k, frame: { R: MF.R, c: [0, 0, -1e4] }, lines: false, Hu }); });
+      const macroP = new Promise(res => { sweepMacroWait = res; macroEngine.msg({ type: 'update', id: 'sw' + k, frame: { R: MF.R, c: [0, 0, -1e4], Br: BR }, lines: false, Hu }); });
       let microVal = null;
       if (microActive()) {
         const MsN = matAtT(mat, tempK).Ms * thermFix; engine.msg({ type: 'field', h: Hu.map(v => v / MsN) });
@@ -1322,6 +1324,66 @@ async function runSweep() {
   }
 }
 $('loopBtn').addEventListener('click', () => { if (sweep) sweep.stop = true; else runSweep(); });
+
+// ===== 표면 영상: 실험에서 자구를 보는 방식으로 윗면(+y)을 2D 흑백 영상으로 =====
+// 커 현미경(극 커 효과): 표면에 수직인 자화 성분 m·n 을 밝기로. 자기력 현미경(MFM): 표면 자극(m·n)과 가까운 층의 부피 자극(−∇·m)을 탐침 높이만큼 흐리게 한 값
+const surfCv = $('surfCanvas');
+function drawSurface(m) {
+  const mode = $('surfSel').value; surfCv.style.display = mode === 'off' || !microActive() ? 'none' : 'block'; if (mode === 'off' || !microActive() || !m) return;
+  const N = NGRID, img = new Float32Array(N * N), mag = (id) => defectKind[id] !== 1 && defectKind[id] !== 4;
+  for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
+    let top = -1; for (let y = N - 1; y >= 0; y--) { const id = x + N * (y + N * z); if (mag(id)) { top = y; break; } }
+    if (top < 0) { img[x + N * z] = NaN; continue; }
+    const id = x + N * (top + N * z); let v = m[3 * id + 1];
+    if (mode === 'mfm') { // 가까운 세 층의 부피 자극을 깊이에 따라 약하게 더함
+      for (let dy = 0; dy < 3 && top - dy - 1 >= 0; dy++) {
+        const y = top - dy, c = x + N * (y + N * z), g = (a, b) => (a >= 0 && b >= 0 && a < N && b < N);
+        let div = 0; const mx1 = x + 1 < N ? m[3 * (c + 1)] : m[3 * c], mx0 = x > 0 ? m[3 * (c - 1)] : m[3 * c];
+        const mz1 = z + 1 < N ? m[3 * (c + N * N) + 2] : m[3 * c + 2], mz0 = z > 0 ? m[3 * (c - N * N) + 2] : m[3 * c + 2];
+        const my1 = m[3 * (c + N) + 1] !== undefined && y + 1 < N ? m[3 * (c + N) + 1] : m[3 * c + 1], my0 = y > 0 ? m[3 * (c - N) + 1] : m[3 * c + 1];
+        div = 0.5 * (mx1 - mx0) + 0.5 * (mz1 - mz0) + 0.5 * (my1 - my0);
+        v += -div * Math.pow(0.5, dy + 1);
+      }
+    }
+    img[x + N * z] = v;
+  }
+  let out = img;
+  if (mode === 'mfm') { // 탐침 높이만큼 가우스 흐림 (칸 1.5개)
+    const r = 3, w = []; let ws = 0; for (let k = -r; k <= r; k++) { const v = Math.exp(-k * k / (2 * 1.5 * 1.5)); w.push(v); ws += v; }
+    const tmp = new Float32Array(N * N); out = new Float32Array(N * N);
+    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) { let s = 0, t = 0; for (let k = -r; k <= r; k++) { const xx = x + k; if (xx < 0 || xx >= N) continue; const v = img[xx + N * z]; if (isNaN(v)) continue; s += w[k + r] * v; t += w[k + r]; } tmp[x + N * z] = isNaN(img[x + N * z]) ? NaN : (t ? s / t : 0); }
+    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) { let s = 0, t = 0; for (let k = -r; k <= r; k++) { const zz = z + k; if (zz < 0 || zz >= N) continue; const v = tmp[x + N * zz]; if (isNaN(v)) continue; s += w[k + r] * v; t += w[k + r]; } out[x + N * z] = isNaN(tmp[x + N * z]) ? NaN : (t ? s / t : 0); }
+  }
+  let mx = 1e-9; for (const v of out) if (!isNaN(v)) mx = Math.max(mx, Math.abs(v));
+  const S = 160; if (surfCv.width !== S) { surfCv.width = S; surfCv.height = S; }
+  const g = surfCv.getContext('2d'), id = g.createImageData(N, N);
+  for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) { const v = out[x + N * z], k = 4 * (x + N * (N - 1 - z)); if (isNaN(v)) { id.data[k + 3] = 0; continue; } const c = Math.round(127.5 + 127.5 * (mode === 'mfm' ? v / mx : v)); id.data[k] = id.data[k + 1] = id.data[k + 2] = c; id.data[k + 3] = 255; }
+  const oc = document.createElement('canvas'); oc.width = N; oc.height = N; oc.getContext('2d').putImageData(id, 0, 0);
+  g.clearRect(0, 0, S, S); g.imageSmoothingEnabled = mode === 'mfm'; g.drawImage(oc, 0, 0, S, S);
+  g.fillStyle = 'rgba(0,0,0,.55)'; g.fillRect(0, S - 18, S, 18); g.fillStyle = '#fff'; g.font = '11px sans-serif'; g.fillText(mode === 'mfm' ? '자기력 현미경 (윗면)' : '커 현미경 (윗면, 밝을수록 +y)', 5, S - 5);
+}
+$('surfSel').addEventListener('change', () => { if (microFrame) drawSurface(microFrame.m); });
+// ===== 실험 장면 불러오기 =====
+async function loadScene(key) {
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+  const set = (id, v, ev) => { const e = $(id); if (e.type === 'checkbox') e.checked = v; else e.value = v; e.dispatchEvent(new Event(ev || 'change')); };
+  const view = (vm) => { const b = document.querySelector(`[data-vm="${vm}"]`); if (b) b.click(); };
+  if (magnetAway) $('awayBtn').click();
+  set('magnetSel', 'ndfeb'); set('shapeSel', 'cube'); ['dInc', 'dGb', 'dPoly', 'dPrec', 'dStress'].forEach(id => set(id, false));
+  const place = (x, z) => { magnet.position.set(x, 0, z); markDirty(); };
+  const S = {
+    contact: async () => { set('matSel', 'Fe'); await wait(200); set('tempSl', 300, 'input'); place(-3.06, 0); view('surface'); return '철 정육면체에 네오디뮴 자석을 붙였어요. 자기력선이 철 쪽으로 몰리고(주황색 선), 정육면체 속 자화가 자석 쪽 면에 모이는 것을 보세요.'; },
+    steel: async () => { set('matSel', 'St'); await wait(200); set('tempSl', 300, 'input'); place(-3.06, 0); await wait(2500); $('awayBtn').click(); return '강철에 자석을 붙였다가 치웠어요. 판독창의 평균 자화가 0이 아니라 남아 있어요(잔류 자화). 재료를 순철로 바꿔 같은 실험을 하면 훨씬 적게 남아요.'; },
+    landau: async () => { set('matSel', 'Py'); await wait(200); set('tempSl', 0, 'input'); place(-12, 0); if (gpuOK) { set('gpuChk', true); set('gridSel', '64'); } else set('gridSel', '32'); await wait(1500); const e = $('edgeSl'); e.value = e.max; e.dispatchEvent(new Event('input')); set('alphaSl', 1, 'input'); set('shapeSel', 'plate'); view('domains'); return '퍼멀로이 얇은 판을 무작위 상태에서 시작했어요. 1~2분 기다리면 판 안에서 네 자구가 한 바퀴 도는 폐쇄 자구(란다우 구조)로 정리돼요. 흐름선이 판 안에서 고리를 그려요.'; },
+    curie: async () => { set('matSel', 'Ni'); await wait(200); set('gridSel', '16'); set('tempSl', 300, 'input'); place(-4, 0); view('domains'); await wait(4000); set('tempSl', 600, 'input'); await wait(4000); set('tempSl', 700, 'input'); return '니켈을 상온에서 600 K로, 다시 700 K로 데웠어요. 퀴리 온도(627 K)를 넘자 자구가 사라지고 상자성으로 바뀌었어요. 온도를 다시 내려 보세요.'; },
+    spm: async () => { set('matSel', 'Mt'); await wait(200); set('gridSel', '16'); set('tempSl', 300, 'input'); place(-12, 0); set('shapeSel', 'sphere'); await wait(300); const e = $('edgeSl'); e.value = 12; e.dispatchEvent(new Event('input')); view('surface'); return '지름 12 nm 자철석 공이에요. 에너지 장벽이 열 에너지보다 작아서, 자화 방향이 열 때문에 계속 흔들리고 뒤집혀요(초상자성). 판독창의 "열로 뒤집히는 시간"을 보세요.'; },
+    eddy: async () => { set('matSel', 'Cu'); await wait(200); set('tempSl', 300, 'input'); place(-3.4, 0); return '구리 정육면체 옆에 자석을 놓았어요. 자석을 위아래나 옆으로 끌어 움직여 보세요. 움직이는 동안 청록색 맴돌이 전류가 생기고, 구리가 자석을 따라 끌려가는 힘이 반자성보다 수천 배 커요.'; },
+    loop: async () => { set('matSel', 'St'); await wait(200); set('gridSel', '16'); set('tempSl', 0, 'input'); set('loopSteps', '20'); set('loopDt', '0.3'); await wait(500); $('loopBtn').click(); return '강철로 이력 곡선을 재고 있어요. 파란 선(5 cm 정육면체)은 반자장 때문에 비스듬하고, 빨간 선(나노 입자)은 모양이 달라요. 측정이 끝나면 아래에 잔류 자화가 나와요.'; }
+  };
+  if (S[key]) { $('sceneNote').textContent = '불러오는 중...'; $('sceneNote').textContent = await S[key](); }
+}
+$('sceneSel').addEventListener('change', (e) => { if (e.target.value) loadScene(e.target.value); e.target.value = ''; });
+$('magnetSel').addEventListener('change', (e) => { BR = MAGNETS[e.target.value].Br; markDirty(); });
 
 // 테마 색
 function applyTheme() {
@@ -1356,7 +1418,7 @@ function loop(now) {
   if (dirty && now - lastCompute > 70) { dirty = false; lastCompute = now; computeMacro(); }
   if (!useWorker && cpuEngine && !useGPU) cpuEngine.tick(12);
   if (microFrame && microFrame !== lastDrawnFrame && microActive()) {
-    lastDrawnFrame = microFrame; drawMicro(microFrame.m);
+    lastDrawnFrame = microFrame; drawMicro(microFrame.m); if (performance.now() - (window.__surfT || 0) > 200) { window.__surfT = performance.now(); drawSurface(microFrame.m); }
     if (viewMode === 'domains' && performance.now() - domLastBuild > (NGRID >= 64 ? 700 : 300)) { domLastBuild = performance.now(); buildDomains(microFrame.m, gpuDomActive() && !(gdom && gdom.failed)); }
     const mat = MATS[matKey], a = microFrame.avg, edge = +$('edgeSl').value;
     if (!$('markChk').disabled && marksDirty) { marksDirty = false; drawMarks(); }

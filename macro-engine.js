@@ -22,7 +22,7 @@ function equalFluxSeeds(Bf, R, c, n, hy, hz) {
 }
 // ===== 거시 엔진: 자석 자기장, 블록 해석, 힘, 자기력선 =====
 function makeMacroEngine(post) {
-  const n = 8, TH = 2.5, MAG_HALF = [0.5, 1, 1], BR = 1.3;
+  const n = 8, TH = 2.5, MAG_HALF = [0.5, 1, 1]; let BR = 1.3; // 자석 종류에 따라 바뀜 (frame.Br)
   const S = new MacroSolver(n, TH); S.maxNewton = 20; S.cgIters = 10; S.maxSub = 4;
   const h = S.h, n3 = S.n3;
   let mat = null, frame = null, J = new Float64Array(3 * n3), HdC = new Float64Array(3 * n3), linear = false, chiLin = 0;
@@ -175,7 +175,7 @@ function makeMacroEngine(post) {
   let busy = false, pending = null;
   function run(d) {
     const t0 = Date.now();
-    frame = d.frame;
+    frame = d.frame; if (frame.Br) BR = frame.Br;
     const Hx = computeHext(d.Hu);
     let M;
     if (!mat || mat.off) { M = new Float64Array(3 * n3); }
