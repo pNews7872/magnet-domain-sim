@@ -222,7 +222,7 @@ class GpuMicro {
       if (d) { geo[12 * i] = d.kpAxis[3 * i]; geo[12 * i + 1] = d.kpAxis[3 * i + 1]; geo[12 * i + 2] = d.kpAxis[3 * i + 2]; if (d.rot) for (let k = 0; k < 9; k++) geo[12 * i + 3 + k] = d.rot[9 * i + k]; this.kpMax = Math.max(this.kpMax, Math.abs(d.kp[i])); }
       if (cp[3 * i] > 0) this.magCount++;
     }
-    this.useRot = !!(d && d.rot); this.ms = Float32Array.from({ length: n3 }, (_, i) => cp[3 * i]);
+    this.useRot = !!(d && d.rot); this.ms = Float32Array.from({ length: n3 }, (_, i) => cp[3 * i]); this.defs = d;
     this.dev.queue.writeBuffer(this.b.cellp, 0, cp); this.dev.queue.writeBuffer(this.b.geo, 0, geo);
     if (this.mat) this.setMaterial(this.mat, this.edge);
   }
@@ -265,6 +265,12 @@ class GpuMicro {
     const n = 12 * this.n3, rb = this.dev.createBuffer({ size: n, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
     const enc = this.dev.createCommandEncoder(), pass = enc.beginComputePass(); this.encodeField(pass, 0); pass.end(); enc.copyBufferToBuffer(this.b.h, 0, rb, 0, n); this.dev.queue.submit([enc.finish()]);
     await rb.mapAsync(GPUMapMode.READ); const h = new Float32Array(rb.getMappedRange().slice(0)); rb.unmap(); rb.destroy(); return h;
+  }
+  async energies() { // 반자장만 GPU로 따로 계산해서 읽어온 뒤 에너지 항목을 구함
+    const p = Float32Array.from(this.prm); p[5] = p[6] = p[7] = p[8] = p[9] = 0; p[13] = p[14] = p[15] = 0; p[24] = 0;
+    this.dev.queue.writeBuffer(this.b.prm, 0, p); const hd = await this.readH(); this.dev.queue.writeBuffer(this.b.prm, 0, this.prm);
+    const d = this.defs, n3 = this.n3, mat = this.mat;
+    return energyTerms({ N: this.N, m: this.mCPU, hd, ms: this.ms, exw: d ? d.exw : new Float32Array(n3).fill(1), kp: d ? d.kp : null, kpAxis: d ? d.kpAxis : null, rot: d ? d.rot : null, Ms: mat.Ms, A: mat.A, K1: mat.K1, K2: mat.K2, aniso: mat.aniso, axis: mat.axis, d: this.cell, happ: this.happ, stressK: this.stressK, stressAxis: this.stressAxis });
   }
   average() { const m = this.mCPU, w = this.ms; let s = [0, 0, 0]; for (let i = 0; i < this.n3; i++) { const a = w[i]; s[0] += a * m[3 * i]; s[1] += a * m[3 * i + 1]; s[2] += a * m[3 * i + 2]; } const n = this.magCount || 1; return [s[0] / n, s[1] / n, s[2] / n]; }
   destroy() { for (const k in this.b) this.b[k].destroy(); }

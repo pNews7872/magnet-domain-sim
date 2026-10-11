@@ -474,9 +474,11 @@ let probeB = [0, 0, 0];
 // ===== 미시 엔진 (워커, 실패 시 메인 스레드) =====
 function makeEngine(post) {
   let sim = null, running = true, active = true, defKey = '';
+  let lastE = 0;
   function frame() {
     const m = new Float32Array(sim.m);
-    post({ type: 'frame', m, tns: sim.t * sim.timeUnit * 1e9, torque: sim.lastTorque, stable: !active, thermal: sim.T > 0, avg: sim.average() }, [m.buffer]);
+    let energy = null; if (performance.now() - lastE > 600) { lastE = performance.now(); energy = sim.energies(); } // 에너지는 가끔만 계산
+    post({ type: 'frame', m, tns: sim.t * sim.timeUnit * 1e9, torque: sim.lastTorque, stable: !active, thermal: sim.T > 0, avg: sim.average(), energy }, [m.buffer]);
   }
   return {
     msg(d) {
@@ -527,7 +529,7 @@ function makeGpuEngine(device, post) {
     else if (d.type === 'run') { running = d.on; }
   }
   (async function loop() {
-    let lastPost = 0;
+    let lastPost = 0, lastE = 0;
     while (alive) {
       await new Promise(r => setTimeout(r, 0)); await chain;
       if (!sim || !sim.mat || !running || !active) { await new Promise(r => setTimeout(r, 50)); continue; }
@@ -536,7 +538,8 @@ function makeGpuEngine(device, post) {
       if (performance.now() - lastPost > (sim.N >= 64 ? 150 : 60)) { // 화면 갱신은 따로, 너무 자주 읽어오지 않게
         lastPost = performance.now(); const m = await sim.readM();
         if (!(sim.T > 0) && sim.lastTorque < 3e-4) active = false;
-        post({ type: 'frame', m: new Float32Array(m), tns: sim.t * sim.timeUnit * 1e9, torque: sim.lastTorque, stable: !active, thermal: sim.T > 0, avg: sim.average(), gpu: true });
+        let energy = null; if (performance.now() - lastE > 800) { lastE = performance.now(); energy = await sim.energies(); }
+        post({ type: 'frame', m: new Float32Array(m), tns: sim.t * sim.timeUnit * 1e9, torque: sim.lastTorque, stable: !active, thermal: sim.T > 0, avg: sim.average(), gpu: true, energy });
       }
     }
   })();
@@ -581,13 +584,14 @@ function setEngineMode(gpu) {
   if (!want && NGRID > 32) setGrid(32); else if (microActive()) { sendConfig(); if (prevM && prevM.length === 3 * N3) engine.msg({ type: 'config', N: NGRID, alpha: lastInit.alpha, mat: lastInit.mat, edge: lastInit.edge, T: lastInit.T, stressK: lastInit.stressK, stressAxis: lastInit.stressAxis, defects: lastInit.defects, h: lastInit.h, m: Array.from(prevM) }); }
 }
 function fallbackToCPU() { gpuOK = false; $('gpuChk').checked = false; $('gpuChk').disabled = true; $('gpuNote').textContent = gpuNote; setEngineMode(false); }
-function onEngineMsg(d) { if (d.type === 'frame' && !!d.gpu === useGPU && d.m.length === 3 * N3) microFrame = d; } // 격자를 바꾼 직후 이전 크기의 프레임은 버림
+let lastEnergy = null;
+function onEngineMsg(d) { if (d.type === 'frame' && !!d.gpu === useGPU && d.m.length === 3 * N3) { microFrame = d; if (d.energy) lastEnergy = d.energy; } } // 격자를 바꾼 직후 이전 크기의 프레임은 버림
 let microFrame = null;
 (function startEngine() {
   try {
     const parts = ['const MU0 = ' + MU0 + ', GAMMA = ' + GAMMA + ', W3 = [-1, 2, -1];',
       f_N.toString(), g_N.toString(), newell.toString(), dipoleN.toString(), demagTensor.toString(), makeFFT.toString(),
-      rng.toString(), buildDefects.toString(), Micro.toString(), makeEngine.toString(),
+      rng.toString(), buildDefects.toString(), energyTerms.toString(), Micro.toString(), makeEngine.toString(),
       'const E = makeEngine((d, tr) => postMessage(d, tr || []));',
       'onmessage = (e) => E.msg(e.data);',
       'function loop() { const busy = E.tick(28); setTimeout(loop, busy ? 0 : 50); } loop();'];
@@ -1125,6 +1129,15 @@ function rateText(ns) { // 실제 1초 동안 계산되는 물리 시간
   if (rateHist.length < 2 || rateHist[0][1] > ns) { if (rateHist.length && rateHist[0][1] > ns) rateHist = [[now, ns]]; return ''; }
   const r = (ns - rateHist[0][1]) / ((now - rateHist[0][0]) / 1000); return r > 0 ? ` (1초에 ${fmtT(r)})` : '';
 }
+// 에너지 막대: 단위 부피당 에너지(kJ/m³). 자구가 생기며 반자장 에너지는 줄고 자벽(교환·이방성) 에너지는 느는 균형을 보여줌
+function energyHTML(e) {
+  if (!e || !e.vol) return '';
+  const rows = [['교환', e.ex, '#2f8f4e'], ['이방성', e.an, '#7a4fd0'], ['반자장', e.dm, '#2a5da8'], ['외부 자기장', e.ze, '#d08a10']];
+  if (Math.abs(e.st) > 1e-30) rows.push(['응력', e.st, '#8a6d3b']);
+  const d = rows.map(r => r[1] / e.vol / 1000), mx = Math.max(1e-9, ...d.map(Math.abs));
+  return '<br><span style="color:var(--muted)">에너지 (kJ/m³), 합 <b style="color:var(--ink)">' + (e.tot / e.vol / 1000).toFixed(1) + '</b></span><br>' + rows.map((r, i) =>
+    `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px"><span style="display:inline-block;width:${Math.max(2, Math.round(42 * Math.abs(d[i]) / mx))}px;height:7px;border-radius:2px;background:${r[2]};opacity:${d[i] < 0 ? 0.55 : 1}"></span>${r[0]} ${d[i].toFixed(1)}</span>`).join('');
+}
 function neelText(mat, edge, a) {
   const shp = $('shapeSel').value;
   if (Math.hypot(a[0], a[1], a[2]) < 0.85 || tempK <= 0 || (shp !== 'cube' && shp !== 'sphere')) return ''; // 판·막대는 모양 이방성이 커서 이 추정식이 맞지 않음
@@ -1327,7 +1340,7 @@ function loop(now) {
       `받는 자기장: <b>${(hB * 1000).toFixed(hB < 0.001 ? 2 : 0)} mT</b> (주황 화살표)<br>` +
       `평균 자화 방향 ⟨m⟩ = (${a.map(v => v.toFixed(2)).join(', ')})<br>` +
       `계산된 시간 ${fmtT(microFrame.tns)}${rateText(microFrame.tns)}, ${microFrame.thermal ? `<b>${Math.round(tempK)} K 열 요동 중</b>` : microFrame.stable ? '<b>안정 상태</b>' : '자리 잡는 중'}` +
-      neelText(mat, edge, a) + warnText(mat) + (viewMode === 'domains' ? domStatsHTML : '');
+      neelText(mat, edge, a) + warnText(mat) + energyHTML(lastEnergy) + (viewMode === 'domains' ? domStatsHTML : '');
   }
   updateDots(dt);
   if ($('uflowChk').checked && microActive() && microFrame && microFrame !== ufFrame && performance.now() - ufLast > (NGRID >= 64 ? 450 : 200)) { ufFrame = microFrame; ufLast = performance.now(); traceFlow(microFrame.m); }

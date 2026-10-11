@@ -196,6 +196,30 @@ function buildDefects(N, cfg) {
   return { ms, exw, kp, kpAxis, rot, kind };
 }
 
+// ===== 에너지 항목 계산 (CPU·GPU 공통): 반자장 hd(환산 단위)를 받아 각 에너지를 J 단위로 =====
+function energyTerms(o) {
+  const MU0e = 4e-7 * Math.PI, N = o.N, V = o.d * o.d * o.d, Kd = MU0e * o.Ms * o.Ms, m = o.m, hd = o.hd;
+  let ex = 0, an = 0, dm = 0, ze = 0, st = 0, n = 0; const ua = o.axis || [0, 1, 0], sa = o.stressAxis || [1, 0, 0];
+  for (let z = 0, id = 0; z < N; z++) for (let y = 0; y < N; y++) for (let x = 0; x < N; x++, id++) {
+    if (!(o.ms[id] > 0)) continue; n++;
+    const i = 3 * id, mx = m[i], my = m[i + 1], mz = m[i + 2];
+    dm += -0.5 * Kd * V * (mx * hd[i] + my * hd[i + 1] + mz * hd[i + 2]);
+    ze += -Kd * V * (mx * o.happ[0] + my * o.happ[1] + mz * o.happ[2]);
+    const wi = o.exw[id];
+    for (const [ok, j] of [[x < N - 1, id + 1], [y < N - 1, id + N], [z < N - 1, id + N * N]]) {
+      if (!ok || !(o.ms[j] > 0)) continue; const w = Math.min(wi, o.exw[j]);
+      const dx = mx - m[3 * j], dy = my - m[3 * j + 1], dz = mz - m[3 * j + 2]; ex += o.A * o.d * w * (dx * dx + dy * dy + dz * dz);
+    }
+    let lx = mx, ly = my, lz = mz;
+    if (o.rot) { const r = o.rot, q = 9 * id; lx = r[q] * mx + r[q + 3] * my + r[q + 6] * mz; ly = r[q + 1] * mx + r[q + 4] * my + r[q + 7] * mz; lz = r[q + 2] * mx + r[q + 5] * my + r[q + 8] * mz; }
+    if (o.aniso === 'cubic') an += V * (o.K1 * (lx * lx * ly * ly + ly * ly * lz * lz + lz * lz * lx * lx) + (o.K2 || 0) * lx * lx * ly * ly * lz * lz);
+    else if (o.aniso === 'uniaxial') { const d = lx * ua[0] + ly * ua[1] + lz * ua[2], s = 1 - d * d; an += V * (o.K1 * s + (o.K2 || 0) * s * s); }
+    if (o.kp && o.kp[id]) { const d = mx * o.kpAxis[i] + my * o.kpAxis[i + 1] + mz * o.kpAxis[i + 2]; an += -V * o.kp[id] * d * d; }
+    if (o.stressK) { const d = mx * sa[0] + my * sa[1] + mz * sa[2]; st += -V * o.stressK * d * d; }
+  }
+  return { ex, an, dm, ze, st, tot: ex + an + dm + ze + st, vol: n * V };
+}
+
 // ===== 마이크로마그네틱 솔버 (정육면체, N³ 셀, 환산 단위 h = H/Ms) =====
 class Micro {
   constructor(N) {
@@ -245,6 +269,14 @@ class Micro {
     this.updateDt();
   }
   updateDt() { this.dt = Math.min(0.1, (this.alpha >= 0.2 ? 1.5 : 1.0) / this.stiff); }
+  energies() { // 반자장만 따로 계산한 뒤 모든 에너지 항목을 구함
+    const sv = [this.cex, this.ck, this.ck2, this.cpk, this.cs, this.happ, this.T];
+    this.cex = this.ck = this.ck2 = this.cpk = this.cs = 0; this.happ = [0, 0, 0]; this.T = 0;
+    const hd = new Float64Array(this.m.length); this.field(this.m, hd);
+    [this.cex, this.ck, this.ck2, this.cpk, this.cs, this.happ, this.T] = sv;
+    const mat = this.mat;
+    return energyTerms({ N: this.N, m: this.m, hd, ms: this.ms, exw: this.exw, kp: this.kp, kpAxis: this.kpAxis, rot: this.rot, Ms: mat.Ms, A: mat.A, K1: mat.K1, K2: mat.K2, aniso: mat.aniso, axis: mat.axis, d: this.cell, happ: this.happ, stressK: this.stressK, stressAxis: this.stressAxis });
+  }
   initState(kind) {
     const N = this.N, m = this.m;
     for (let z = 0; z < N; z++) for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
