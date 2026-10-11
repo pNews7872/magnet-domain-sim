@@ -1426,11 +1426,23 @@ applyTheme();
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 
 const touchHintText = '한 손가락: 스크롤 · 두 손가락: 회전과 확대 · 자석 길게 누르기: 잡아서 옮기기';
+// 판독창이 3D 화면 위쪽을 덮는 만큼, 장면을 아래로 내려 그림 (카메라 시야만 옮기고 회전 중심은 그대로)
+let viewShift = [-1, -1];
+function updateViewShift() {
+  [[mCam, macroView, $('macroReadout'), 0], [uCam, microView, $('microReadout'), 1]].forEach(([cam, el, ro, k]) => {
+    const W = el.clientWidth, H = el.clientHeight; if (!W || !H) return;
+    const shown = ro && getComputedStyle(ro).display !== 'none';
+    const dy = shown ? Math.round(Math.min(0.22 * H, (ro.offsetHeight + 12) / 2)) : 0;
+    if (dy === viewShift[k] && cam.view && cam.view.fullWidth === W && cam.view.fullHeight === H) return;
+    viewShift[k] = dy;
+    if (dy > 0) cam.setViewOffset(W, H, 0, -dy, W, H); else cam.clearViewOffset();
+  });
+}
 function resize() {
   for (const [r, cam, el] of [[mR, mCam, macroView], [uR, uCam, microView]]) {
     const w = el.clientWidth, h = el.clientHeight; if (!w || !h) continue;
     const cur = r.getSize(new THREE.Vector2()); if (Math.abs(cur.x - w) < 1 && Math.abs(cur.y - h) < 1) continue; // 크기가 그대로면 다시 만들지 않음 (깜빡임 방지)
-    r.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix();
+    r.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix(); viewShift = [-1, -1];
     if (r === mR) mR.render(mScene, mCam); else uR.render(uScene, uCam); // 크기를 바꾼 그 순간 바로 다시 그려서 검은 화면이 보이지 않게
   }
 }
@@ -1459,7 +1471,7 @@ function loop(now) {
   updateDots(dt);
   if ($('uflowChk').checked && microActive() && microFrame && microFrame !== ufFrame && performance.now() - ufLast > (NGRID >= 64 ? 450 : 200)) { ufFrame = microFrame; ufLast = performance.now(); traceFlow(microFrame.m); }
   updateFlowDots(dt);
-  mCtl.update(); uCtl.update();
+  mCtl.update(); uCtl.update(); updateViewShift();
   const gdOn = gpuDomActive() && renderGpuDomains(); uR.setClearAlpha(gdOn ? 0 : 1);
   if (gdOn) domGroup.visible = false; else { hideGpuDomains(); domGroup.visible = viewMode === 'domains'; }
   mR.render(mScene, mCam); uR.render(uScene, uCam);
