@@ -124,7 +124,8 @@ var<workgroup> sh: array<f32, 64>;
   let a = prm[11]; let pre = -1.0 / (1.0 + a * a);
   let mv = getm(id); let hv = vec3<f32>(h[3u*id], h[3u*id+1u], h[3u*id+2u]);
   let c = cross(mv, hv); let d = cross(mv, c);
-  let r = pre * (c + a * d);
+  var r = pre * (c + a * d);
+  if (prm[28] > 0.5) { r = -d; } // 평형 찾기 모드
   if (ctrl.b == 0u) { k1[3u*id] = r.x; k1[3u*id+1u] = r.y; k1[3u*id+2u] = r.z; }
   else { k2[3u*id] = r.x; k2[3u*id+1u] = r.y; k2[3u*id+2u] = r.z; }
   sh[li] = dot(c, c);
@@ -199,7 +200,7 @@ class GpuMicro {
     this.stiff = 12 * this.cex + Math.abs(this.ck) * 2 + Math.abs(this.ck2) * 4 + 2 * this.cpk * (this.kpMax || 0) + 2 * Math.abs(this.cs) + 2;
     this.updateDt();
   }
-  updateDt() { this.dt = Math.min(0.1, (this.alpha >= 0.2 ? 1.5 : 1.0) / this.stiff); this.writePrm(); }
+  updateDt() { this.dt = this.relax ? 1.8 / this.stiff : Math.min(0.1, (this.alpha >= 0.2 ? 1.5 : 1.0) / this.stiff); this.writePrm(); }
   writePrm() {
     if (!this.mat) return;
     const p = this.prm, mat = this.mat; p.fill(0);
@@ -210,7 +211,7 @@ class GpuMicro {
     const ua = mat.axis || [0, 0, 1]; p[16] = ua[0]; p[17] = ua[1]; p[18] = ua[2];
     p[19] = this.stressAxis[0]; p[20] = this.stressAxis[1]; p[21] = this.stressAxis[2];
     p[22] = mat.aniso === 'cubic' ? 1 : mat.aniso === 'uniaxial' ? 2 : 0; p[23] = this.useRot ? 1 : 0; p[24] = this.T > 0 ? 1 : 0;
-    p[25] = 1 / this.PP; p[26] = (this.seed = (this.seed || 12345) + 7919) % 1e6; p[27] = this.noDemag ? 1 : 0;
+    p[25] = 1 / this.PP; p[26] = (this.seed = (this.seed || 12345) + 7919) % 1e6; p[27] = this.noDemag ? 1 : 0; p[28] = this.relax ? 1 : 0; if (this.relax) { p[12] = 0; p[24] = 0; }
     this.dev.queue.writeBuffer(this.b.prm, 0, p);
   }
   setField(hv) { this.happ = hv; this.writePrm(); }
@@ -246,7 +247,7 @@ class GpuMicro {
     const enc = this.dev.createCommandEncoder(), pass = enc.beginComputePass(), n3w = this.wg(this.n3);
     const ds = (name, bg, w) => { pass.setPipeline(this.pipe[name]); pass.setBindGroup(0, bg); pass.dispatchWorkgroups(w[0], w[1]); };
     for (let k = 0; k < n; k++) {
-      if (this.T > 0) { ds('inc', this.bg(0, 0, 0), [1, 1]); ds('noise', this.bg(0, 0, 0), n3w); }
+      if (this.T > 0 && !this.relax) { ds('inc', this.bg(0, 0, 0), [1, 1]); ds('noise', this.bg(0, 0, 0), n3w); }
       this.encodeField(pass, 0); ds('rhs', this.bg(0, 0, 0), n3w); ds('pred', this.bg(0, 0, 0), n3w);
       this.encodeField(pass, 1); ds('rhs', this.bg(1, 1, 0), n3w); ds('corr', this.bg(0, 0, 0), n3w);
     }

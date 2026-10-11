@@ -408,6 +408,7 @@ function macroMatMsg(reset) {
 }
 function sendMacroMat(reset) { macroEngine.msg({ type: 'mat', mat: macroMatMsg(reset) }); }
 function requestMacro() {
+  if (sweep) return; // 이력 곡선 측정 중에는 일반 계산 요청을 보내지 않음 (측정 요청이 밀려 사라지지 않게)
   if (macroBusy) { macroQueued = true; return; }
   macroBusy = true; $('macroBusy').hidden = false;
   const frame = magnetAway ? { R: MF.R, c: [0, 0, -1e4], Br: BR } : { R: MF.R, c: MF.c, Br: BR };
@@ -521,7 +522,8 @@ function makeEngine(post) {
         active = true; frame();
       }
       else if (!sim) return;
-      else if (d.type === 'field') { const o = sim.happ; if (Math.abs(o[0] - d.h[0]) + Math.abs(o[1] - d.h[1]) + Math.abs(o[2] - d.h[2]) > 1e-7) { sim.happ = d.h; active = true; } }
+      else if (d.type === 'field') { const o = sim.happ; if (Math.abs(o[0] - d.h[0]) + Math.abs(o[1] - d.h[1]) + Math.abs(o[2] - d.h[2]) > 1e-7) { sim.happ = d.h; if (sim.relax) sim.perturb(0.01); active = true; } }
+      else if (d.type === 'relax') { sim.relax = d.on; sim.updateDt(); active = true; }
       else if (d.type === 'alpha') { sim.alpha = d.alpha; sim.updateDt(); active = true; }
       else if (d.type === 'reset') { sim.initState(d.state); sim.t = 0; active = true; frame(); }
       else if (d.type === 'run') { running = d.on; }
@@ -529,7 +531,7 @@ function makeEngine(post) {
     tick(budget) {
       if (!sim || !sim.mat || !running || !active) return false;
       const t0 = performance.now();
-      while (performance.now() - t0 < budget) { sim.step(); if (!(sim.T > 0) && sim.lastTorque < 3e-4) { active = false; break; } }
+      while (performance.now() - t0 < budget) { sim.step(); if ((!(sim.T > 0) || sim.relax) && sim.lastTorque < (sim.relax ? 1e-4 : 3e-4)) { active = false; break; } }
       frame(); return true;
     }
   };
@@ -550,7 +552,8 @@ function makeGpuEngine(device, post) {
       if (d.m) sim.setM(d.m); else if (d.state || fresh) sim.initState(d.state || 'vortex');
       active = true; await frame();
     } else if (!sim) return;
-    else if (d.type === 'field') { const o = sim.happ; if (Math.abs(o[0] - d.h[0]) + Math.abs(o[1] - d.h[1]) + Math.abs(o[2] - d.h[2]) > 1e-7) { sim.setField(d.h); active = true; } }
+    else if (d.type === 'field') { const o = sim.happ; if (Math.abs(o[0] - d.h[0]) + Math.abs(o[1] - d.h[1]) + Math.abs(o[2] - d.h[2]) > 1e-7) { sim.setField(d.h); if (sim.relax) { const t = { m: Float32Array.from(await sim.readM()), ms: sim.ms }; Micro.prototype.perturb.call(t, 0.01); sim.setM(t.m); } active = true; } }
+    else if (d.type === 'relax') { sim.relax = d.on; sim.updateDt(); active = true; }
     else if (d.type === 'alpha') { sim.alpha = d.alpha; sim.updateDt(); active = true; }
     else if (d.type === 'reset') { sim.initState(d.state); sim.t = 0; active = true; await frame(); }
     else if (d.type === 'run') { running = d.on; }
@@ -564,7 +567,7 @@ function makeGpuEngine(device, post) {
       batch = Math.max(1, Math.min(2000, Math.round(batch * 20 / Math.max(gdt, 0.5)))); // GPU 시간만으로 한 묶음 크기 조절
       if (performance.now() - lastPost > (sim.N >= 64 ? 150 : 60)) { // 화면 갱신은 따로, 너무 자주 읽어오지 않게
         lastPost = performance.now(); const m = await sim.readM();
-        if (!(sim.T > 0) && sim.lastTorque < 3e-4) active = false;
+        if ((!(sim.T > 0) || sim.relax) && sim.lastTorque < (sim.relax ? 1e-4 : 3e-4)) active = false;
         let energy = null; if (performance.now() - lastE > 800) { lastE = performance.now(); energy = await sim.energies(); }
         post({ type: 'frame', m: new Float32Array(m), tns: sim.t * sim.timeUnit * 1e9, torque: sim.lastTorque, stable: !active, thermal: sim.T > 0, avg: sim.average(), gpu: true, energy });
       }
@@ -612,7 +615,7 @@ function setEngineMode(gpu) {
 }
 function fallbackToCPU() { gpuOK = false; $('gpuChk').checked = false; $('gpuChk').disabled = true; $('gpuNote').textContent = gpuNote; setEngineMode(false); }
 let lastEnergy = null;
-function onEngineMsg(d) { if (d.type === 'frame' && !!d.gpu === useGPU && d.m.length === 3 * N3) { microFrame = d; if (d.energy) lastEnergy = d.energy; } } // 격자를 바꾼 직후 이전 크기의 프레임은 버림
+function onEngineMsg(d) { if (d.type === 'frame' && !!d.gpu === useGPU && d.m.length === 3 * N3) { d.arr = performance.now(); microFrame = d; if (d.energy) lastEnergy = d.energy; } } // 격자를 바꾼 직후 이전 크기의 프레임은 버림
 let microFrame = null;
 (function startEngine() {
   try {
@@ -1294,22 +1297,25 @@ async function runSweep() {
   const mat = MATS[matKey]; if (mat.kind !== 'ferro' || matAtT(mat, tempK).m < 0.02) { $('loopStatus').textContent = '강자성 재료이면서 퀴리 온도 아래일 때만 측정할 수 있어요.'; return; }
   const ax = { x: 0, y: 1, z: 2 }[$('loopAxis').value], eff = matAtT(mat, tempK), MsMacro = (mat.macroMs || mat.Ms) * eff.ratio;
   const Hmax = 1.25 * Math.max(MsMacro, eff.Ms) / 3 + 2 * (mat.ja ? mat.ja.k * eff.ratio : 0); // 정육면체 반자장(Ms/3)을 넘어서 포화시킬 만큼
-  const nHalf = +$('loopSteps').value, dtNs = +$('loopDt').value;
+  const nHalf = +$('loopSteps').value, dtNs = +$('loopDt').value, eq = $('loopMode').value === 'eq';
   const path = []; for (let i = 0; i <= nHalf; i++) path.push(Hmax * i / nHalf); for (let i = nHalf - 1; i >= -nHalf; i--) path.push(Hmax * i / nHalf); for (let i = -nHalf + 1; i <= nHalf; i++) path.push(Hmax * i / nHalf);
   const wasAway = magnetAway; magnetAway = true; magnet.visible = false; allLines = []; drawLines();
   sendMacroMat(true); // 정육면체를 소자된 상태에서 시작
-  if (microActive()) engine.msg({ type: 'reset', state: 'random' });
+  if (microActive()) { engine.msg({ type: 'reset', state: 'random' }); engine.msg({ type: 'relax', on: eq }); }
   sweep = { stop: false }; loopData.macro = []; loopData.micro = []; loopData.hmax = Hmax * MU0 * 1000;
   $('loopBtn').textContent = '측정 멈추기'; $('loopBtn').setAttribute('aria-pressed', 'true');
   try {
     for (let k = 0; k < path.length && !sweep.stop; k++) {
       const Hu = [0, 0, 0]; Hu[ax] = path[k];
-      const macroP = new Promise(res => { sweepMacroWait = res; macroEngine.msg({ type: 'update', id: 'sw' + k, frame: { R: MF.R, c: [0, 0, -1e4], Br: BR }, lines: false, Hu }); });
+      const swMsg = { type: 'update', id: 'sw' + k, frame: { R: MF.R, c: [0, 0, -1e4], Br: BR }, lines: false, Hu };
+      const macroP = new Promise(res => { sweepMacroWait = res; macroEngine.msg(swMsg); const again = setInterval(() => { if (sweepMacroWait === res) macroEngine.msg(swMsg); else clearInterval(again); }, 8000); }); // 응답이 없으면 다시 요청
       let microVal = null;
       if (microActive()) {
         const MsN = matAtT(mat, tempK).Ms * thermFix; engine.msg({ type: 'field', h: Hu.map(v => v / MsN) });
         const t0 = microFrame ? microFrame.tns : 0, start = performance.now();
-        await new Promise(res => { const chk = () => { if (sweep.stop || (microFrame && (microFrame.tns - t0 >= dtNs || (microFrame.stable && performance.now() - start > 300))) || performance.now() - start > 25000) res(); else setTimeout(chk, 50); }; chk(); });
+        // 평형: 새 자기장에서 돌림힘이 충분히 작아질(자리 잡을) 때까지, 동역학: 정해진 계산 시간만큼
+        const done = () => eq ? (microFrame && microFrame.arr > start + 40 && microFrame.stable) : (microFrame && (microFrame.tns - t0 >= dtNs || (microFrame.stable && performance.now() - start > 300)));
+        await new Promise(res => { const chk = () => { if (sweep.stop || done() || performance.now() - start > (eq ? 40000 : 25000)) res(); else setTimeout(chk, 40); }; chk(); });
         if (microFrame) microVal = microFrame.avg[ax];
       }
       const d = await macroP; macroRes = d; targetM = d.avg; forceN = d.F; applyMacroResult(d, false); allLines = []; drawLines();
@@ -1317,13 +1323,16 @@ async function runSweep() {
       loopData.macro.push([hm, d.avg[ax] / MsMacro]); if (microVal !== null) loopData.micro.push([hm, microVal]);
       $('loopStatus').textContent = `측정 중 ${k + 1}/${path.length}, μ₀H = ${hm.toFixed(0)} mT`; drawLoop();
     }
-    const m = loopData.macro, rem = m.length ? m[2 * nHalf][1] : 0;
+    const m = loopData.macro, rem = m.length > 2 * nHalf ? m[2 * nHalf][1] : 0;
     $('loopStatus').textContent = sweep.stop ? '측정을 멈췄어요.' : `측정 끝. 자기장 0에서 남은 자화(잔류): 정육면체 ${(100 * Math.abs(rem)).toFixed(1)}%` + (loopData.micro.length > 2 * nHalf ? `, 나노 입자 ${(100 * Math.abs(loopData.micro[2 * nHalf][1])).toFixed(0)}%` : '');
   } finally {
+    if (microActive()) engine.msg({ type: 'relax', on: false });
     sweep = null; magnetAway = wasAway; $('loopBtn').textContent = '이력 곡선 측정'; $('loopBtn').setAttribute('aria-pressed', 'false'); markDirty();
   }
 }
 $('loopBtn').addEventListener('click', () => { if (sweep) sweep.stop = true; else runSweep(); });
+$('loopMode').addEventListener('change', () => { $('loopDt').disabled = $('loopMode').value === 'eq'; });
+$('loopDt').disabled = $('loopMode').value === 'eq';
 
 // ===== 표면 영상: 실험에서 자구를 보는 방식으로 윗면(+y)을 2D 흑백 영상으로 =====
 // 커 현미경(극 커 효과): 표면에 수직인 자화 성분 m·n 을 밝기로. 자기력 현미경(MFM): 표면 자극(m·n)과 가까운 층의 부피 자극(−∇·m)을 탐침 높이만큼 흐리게 한 값

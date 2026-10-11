@@ -268,7 +268,11 @@ class Micro {
     this.stiff = 12 * this.cex + Math.abs(this.ck) * 2 + Math.abs(this.ck2) * 4 + 2 * this.cpk * (this.kpMax || 0) + 2 * Math.abs(this.cs) + 2; this.edge = edge_nm;
     this.updateDt();
   }
-  updateDt() { this.dt = Math.min(0.1, (this.alpha >= 0.2 ? 1.5 : 1.0) / this.stiff); }
+  updateDt() { this.dt = this.relax ? 1.8 / this.stiff : Math.min(0.1, (this.alpha >= 0.2 ? 1.5 : 1.0) / this.stiff); } // relax: 평형 찾기 모드(세차운동 없이 에너지가 가장 빨리 줄어드는 방향으로만)
+  perturb(amp) { // 평형 찾기 모드에서 대칭 때문에 불안정한 평형(안장점)에 멈추지 않도록 아주 작게 흔듦
+    const m = this.m;
+    for (let i = 0; i < m.length; i += 3) { if (!(this.ms[i / 3] > 0)) continue; m[i] += amp * (Math.random() - 0.5); m[i + 1] += amp * (Math.random() - 0.5); m[i + 2] += amp * (Math.random() - 0.5); const n = Math.hypot(m[i], m[i + 1], m[i + 2]); m[i] /= n; m[i + 1] /= n; m[i + 2] /= n; }
+  }
   energies() { // 반자장만 따로 계산한 뒤 모든 에너지 항목을 구함
     const sv = [this.cex, this.ck, this.ck2, this.cpk, this.cs, this.happ, this.T];
     this.cex = this.ck = this.ck2 = this.cpk = this.cs = 0; this.happ = [0, 0, 0]; this.T = 0;
@@ -359,19 +363,19 @@ class Micro {
       h[i] = hx; h[i + 1] = hy; h[i + 2] = hz;
     }
   }
-  rhs(m, h, out) { // LLG, 환산 단위
-    const a = this.alpha, pre = -1 / (1 + a * a); let tmax = 0;
+  rhs(m, h, out) { // LLG, 환산 단위 (relax 모드에서는 dm/dt = −m×(m×h): 감쇠만 남긴 에너지 경사 하강)
+    const relax = !!this.relax, a = relax ? 1 : this.alpha, pre = relax ? -1 : -1 / (1 + a * a); let tmax = 0;
     for (let i = 0; i < m.length; i += 3) {
       const mx = m[i], my = m[i + 1], mz = m[i + 2], hx = h[i], hy = h[i + 1], hz = h[i + 2];
       const cx = my * hz - mz * hy, cy = mz * hx - mx * hz, cz = mx * hy - my * hx;
       const dx = my * cz - mz * cy, dy = mz * cx - mx * cz, dz = mx * cy - my * cx;
-      out[i] = pre * (cx + a * dx); out[i + 1] = pre * (cy + a * dy); out[i + 2] = pre * (cz + a * dz);
+      if (relax) { out[i] = -dx; out[i + 1] = -dy; out[i + 2] = -dz; } else { out[i] = pre * (cx + a * dx); out[i + 1] = pre * (cy + a * dy); out[i + 2] = pre * (cz + a * dz); }
       const t = cx * cx + cy * cy + cz * cz; if (t > tmax) tmax = t;
     }
     return Math.sqrt(tmax);
   }
   makeNoise() { // 브라운 열 자기장 (환산 단위), 두 Heun 단계에서 같은 값 사용
-    if (!(this.T > 0)) return;
+    if (!(this.T > 0) || this.relax) { if (this.relax) this.noise.fill(0); return; }
     const kB = 1.380649e-23, Ms = this.mat.Ms;
     const sig = Math.sqrt(2 * this.alpha * kB * this.T / (MU0 * Ms * Ms * this.cellV * this.dt));
     const nz = this.noise;
