@@ -75,11 +75,12 @@ function makeMacroEngine(post) {
   function Btotal(x, y, z, out) { Btool(x, y, z, out); Btarget(x, y, z, bt); out[0] += bt[0]; out[1] += bt[1]; out[2] += bt[2]; return out; }
   // 블록 평균 외부장 (2³ 표본)
   const SUBO = [-0.25, 0.25];
-  function computeHext() {
+  function computeHext(Hu) { // Hu: 코일이 만드는 균일 자기장 (A/m), 이력 곡선 측정용
     const H = new Float64Array(3 * n3), b = [0, 0, 0];
     for (let i = 0; i < n3; i++) { const c = S.centers[i]; let sx = 0, sy = 0, sz = 0;
       for (const a of SUBO) for (const bb of SUBO) for (const d of SUBO) { Btool(c[0] + a * h, c[1] + bb * h, c[2] + d * h, b); sx += b[0]; sy += b[1]; sz += b[2]; }
-      H[3 * i] = sx / 8 / MU0; H[3 * i + 1] = sy / 8 / MU0; H[3 * i + 2] = sz / 8 / MU0; }
+      H[3 * i] = sx / 8 / MU0; H[3 * i + 1] = sy / 8 / MU0; H[3 * i + 2] = sz / 8 / MU0;
+      if (Hu) { H[3 * i] += Hu[0]; H[3 * i + 1] += Hu[1]; H[3 * i + 2] += Hu[2]; } }
     return H;
   }
   function computeForce(M) { // F = Σ V (M·∇) B_tool, 블록당 2³ 표본
@@ -122,7 +123,7 @@ function makeMacroEngine(post) {
   function run(d) {
     const t0 = Date.now();
     frame = d.frame;
-    const Hx = computeHext();
+    const Hx = computeHext(d.Hu);
     let M;
     if (!mat || mat.off) { M = new Float64Array(3 * n3); }
     else if (mat.small) { const ce = mat.chi / (1 + mat.chi / 3); M = Hx.map(v => v * ce); } // 작은 χ: 정육면체 반자장(1/3)만 보정, |χ|≪1이면 χ와 같음

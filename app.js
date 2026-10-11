@@ -372,6 +372,7 @@ function drawLines() {
 }
 function onMacroMsg(d) {
   if (d.type !== 'result') return;
+  if (typeof d.id === 'string' && d.id.startsWith('sw')) { if (sweepMacroWait) { const f = sweepMacroWait; sweepMacroWait = null; f(d); } return; } // 이력 곡선 측정 결과는 따로 처리
   macroBusy = false; macroRes = d;
   pvGrid = d.grid; pvSup = d.sup; pvAny = d.anyJ; pvAvg = d.avg;
   const fresh = d.id === sentVersion && sentVersion === posVersion;
@@ -1071,6 +1072,7 @@ function computeMacro() {
   const pp = probePoint(); probeMarker.position.set(pp[0], pp[1], pp[2]);
   if (magnetAway) probeB = [0, 0, 0]; else Btool(pp[0], pp[1], pp[2], probeB);
   const mat = MATS[matKey];
+  if (sweep) return; // 이력 곡선 측정 중에는 코일 자기장만 씀
   if (microActive()) engine.msg({ type: 'field', h: probeB.map(v => v / (MU0 * matAtT(mat, tempK).Ms * thermFix)) });
   posVersion++;
   tracePreview(); // 즉시: 자석 자기장은 정확, 정육면체 반응은 직전 계산값
@@ -1217,8 +1219,72 @@ document.querySelectorAll('[data-vm]').forEach(b => b.addEventListener('click', 
 
 // 좁은 화면에서는 3D 화면 위 판독창 대신 화면 아래 정보 칸에 같은 내용을 보여줌
 for (const [a, b] of [['macroReadout', 'macroInfo'], ['microReadout', 'microInfo']]) { const src = $(a), dst = $(b); const copy = () => { if (dst.innerHTML !== src.innerHTML) dst.innerHTML = src.innerHTML; }; new MutationObserver(copy).observe(src, { childList: true, subtree: true, characterData: true }); copy(); }
+// ===== 이력 곡선 (M–H) 측정: 자석을 치우고 코일로 균일한 자기장을 걸어 천천히 올렸다 내림 =====
+let sweep = null, sweepMacroWait = null;
+const loopCv = $('loopCanvas'), loopData = { macro: [], micro: [], cur: null, unit: 'mT', hmax: 1 };
+function loopColors() { return { ink: cssColor('--ink') || '#1d2630', muted: cssColor('--muted') || '#56636f', rule: cssColor('--rule') || '#c3ccd3', a: cssColor('--south') || '#2a5da8', b: cssColor('--north') || '#c4262e', bg: cssColor('--surface') || '#fff' }; }
+function drawLoop() {
+  const dpr = window.devicePixelRatio || 1, W = loopCv.clientWidth, H = loopCv.clientHeight; if (!W || !H) return;
+  if (loopCv.width !== Math.round(W * dpr)) { loopCv.width = Math.round(W * dpr); loopCv.height = Math.round(H * dpr); }
+  const g = loopCv.getContext('2d'), C = loopColors(); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const L = 52, R = 14, T = 14, B = 40, pw = W - L - R, ph = H - T - B, hm = loopData.hmax;
+  const X = (h) => L + (h / hm + 1) / 2 * pw, Y = (m) => T + (1 - (m + 1) / 2) * ph;
+  g.font = '12px "IBM Plex Sans KR", sans-serif'; g.lineWidth = 1;
+  g.strokeStyle = C.rule; g.fillStyle = C.muted; g.textAlign = 'center';
+  for (const f of [-1, -0.5, 0, 0.5, 1]) { g.beginPath(); g.moveTo(X(f * hm), T); g.lineTo(X(f * hm), T + ph); g.stroke(); g.fillText((f * hm).toFixed(0), X(f * hm), T + ph + 16); }
+  g.textAlign = 'right';
+  for (const f of [-1, -0.5, 0, 0.5, 1]) { g.beginPath(); g.moveTo(L, Y(f)); g.lineTo(L + pw, Y(f)); g.stroke(); g.fillText(f.toFixed(1), L - 6, Y(f) + 4); }
+  g.strokeStyle = C.muted; g.beginPath(); g.moveTo(X(0), T); g.lineTo(X(0), T + ph); g.moveTo(L, Y(0)); g.lineTo(L + pw, Y(0)); g.stroke();
+  g.fillStyle = C.ink; g.textAlign = 'center'; g.fillText('가한 자기장 μ₀H (mT)', L + pw / 2, H - 6);
+  g.save(); g.translate(13, T + ph / 2); g.rotate(-Math.PI / 2); g.fillText('자화 M / Ms', 0, 0); g.restore();
+  for (const [key, col] of [['macro', C.a], ['micro', C.b]]) {
+    const pts = loopData[key]; if (pts.length < 1) continue;
+    g.strokeStyle = col; g.lineWidth = 2; g.beginPath(); pts.forEach((p, i) => { const x = X(p[0]), y = Y(Math.max(-1.05, Math.min(1.05, p[1]))); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke();
+    const p = pts[pts.length - 1]; g.fillStyle = col; g.beginPath(); g.arc(X(p[0]), Y(Math.max(-1.05, Math.min(1.05, p[1]))), 4, 0, Math.PI * 2); g.fill();
+  }
+  g.textAlign = 'left'; g.font = '12px "IBM Plex Sans KR", sans-serif';
+  g.fillStyle = C.a; g.fillRect(L + 8, T + 6, 14, 3); g.fillStyle = C.ink; g.fillText('5 cm 정육면체 (블록 계산 + 이력 모형)', L + 28, T + 11);
+  g.fillStyle = C.b; g.fillRect(L + 8, T + 24, 14, 3); g.fillStyle = C.ink; g.fillText('나노 입자 (LLG 계산)', L + 28, T + 29);
+}
+new ResizeObserver(drawLoop).observe(loopCv);
+async function runSweep() {
+  const mat = MATS[matKey]; if (mat.kind !== 'ferro' || matAtT(mat, tempK).m < 0.02) { $('loopStatus').textContent = '강자성 재료이면서 퀴리 온도 아래일 때만 측정할 수 있어요.'; return; }
+  const ax = { x: 0, y: 1, z: 2 }[$('loopAxis').value], eff = matAtT(mat, tempK), MsMacro = (mat.macroMs || mat.Ms) * eff.ratio;
+  const Hmax = 1.25 * Math.max(MsMacro, eff.Ms) / 3 + 2 * (mat.ja ? mat.ja.k * eff.ratio : 0); // 정육면체 반자장(Ms/3)을 넘어서 포화시킬 만큼
+  const nHalf = +$('loopSteps').value, dtNs = +$('loopDt').value;
+  const path = []; for (let i = 0; i <= nHalf; i++) path.push(Hmax * i / nHalf); for (let i = nHalf - 1; i >= -nHalf; i--) path.push(Hmax * i / nHalf); for (let i = -nHalf + 1; i <= nHalf; i++) path.push(Hmax * i / nHalf);
+  const wasAway = magnetAway; magnetAway = true; magnet.visible = false; allLines = []; drawLines();
+  sendMacroMat(true); // 정육면체를 소자된 상태에서 시작
+  if (microActive()) engine.msg({ type: 'reset', state: 'random' });
+  sweep = { stop: false }; loopData.macro = []; loopData.micro = []; loopData.hmax = Hmax * MU0 * 1000;
+  $('loopBtn').textContent = '측정 멈추기'; $('loopBtn').setAttribute('aria-pressed', 'true');
+  try {
+    for (let k = 0; k < path.length && !sweep.stop; k++) {
+      const Hu = [0, 0, 0]; Hu[ax] = path[k];
+      const macroP = new Promise(res => { sweepMacroWait = res; macroEngine.msg({ type: 'update', id: 'sw' + k, frame: { R: MF.R, c: [0, 0, -1e4] }, lines: false, Hu }); });
+      let microVal = null;
+      if (microActive()) {
+        const MsN = matAtT(mat, tempK).Ms * thermFix; engine.msg({ type: 'field', h: Hu.map(v => v / MsN) });
+        const t0 = microFrame ? microFrame.tns : 0, start = performance.now();
+        await new Promise(res => { const chk = () => { if (sweep.stop || (microFrame && (microFrame.tns - t0 >= dtNs || (microFrame.stable && performance.now() - start > 300))) || performance.now() - start > 25000) res(); else setTimeout(chk, 50); }; chk(); });
+        if (microFrame) microVal = microFrame.avg[ax];
+      }
+      const d = await macroP; macroRes = d; targetM = d.avg; forceN = d.F; applyMacroResult(d, false); allLines = []; drawLines();
+      const hm = path[k] * MU0 * 1000;
+      loopData.macro.push([hm, d.avg[ax] / MsMacro]); if (microVal !== null) loopData.micro.push([hm, microVal]);
+      $('loopStatus').textContent = `측정 중 ${k + 1}/${path.length}, μ₀H = ${hm.toFixed(0)} mT`; drawLoop();
+    }
+    const m = loopData.macro, rem = m.length ? m[2 * nHalf][1] : 0;
+    $('loopStatus').textContent = sweep.stop ? '측정을 멈췄어요.' : `측정 끝. 자기장 0에서 남은 자화(잔류): 정육면체 ${(100 * Math.abs(rem)).toFixed(1)}%` + (loopData.micro.length > 2 * nHalf ? `, 나노 입자 ${(100 * Math.abs(loopData.micro[2 * nHalf][1])).toFixed(0)}%` : '');
+  } finally {
+    sweep = null; magnetAway = wasAway; $('loopBtn').textContent = '이력 곡선 측정'; $('loopBtn').setAttribute('aria-pressed', 'false'); markDirty();
+  }
+}
+$('loopBtn').addEventListener('click', () => { if (sweep) sweep.stop = true; else runSweep(); });
+
 // 테마 색
 function applyTheme() {
+  setTimeout(drawLoop, 0);
   mR.setClearColor(new THREE.Color(cssColor('--scene') || '#dfe5e9'));
   uR.setClearColor(new THREE.Color(cssColor('--scene') || '#dfe5e9'));
   const ink = new THREE.Color(cssColor('--ink') || '#1d2630');
